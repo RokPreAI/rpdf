@@ -2,12 +2,10 @@
 
 ## Current TODOs
 
-- [ ] 1 Foundation bootstrap-desktop-app-shell
+- [ ] 2 Canvas add-canvas-assets-and-backgrounds
 
 ## Active TODOs
 
-- [ ] 1 Canvas implement-canvas-pen-and-viewport
-- [ ] 2 Canvas add-canvas-assets-and-backgrounds
 - [ ] 2 Pdf add-pdf-viewer-and-navigation
 - [ ] 2 Annotation add-pdf-and-canvas-annotation-tools
 - [ ] 3 Export add-selection-aware-svg-export
@@ -19,6 +17,8 @@
 
 ## Done TODOs
 
+- [x] 1 Canvas implement-canvas-pen-and-viewport
+- [x] 1 Foundation bootstrap-desktop-app-shell
 - [x] 0 Foundation define-document-models
 
 ## Task Details
@@ -55,7 +55,7 @@ Keep this task at the contract/data-boundary level. Do not lock in rendering or 
 
 Priority: 1
 Area: Foundation
-Status: current
+Status: done
 Depends on: define-document-models
 
 Goal:
@@ -83,7 +83,7 @@ This task is about the host application structure and user-visible shell behavio
 
 Priority: 1
 Area: Canvas
-Status: pending
+Status: done
 Depends on: define-document-models, bootstrap-desktop-app-shell
 
 Goal:
@@ -111,7 +111,7 @@ Prioritize directness and low-friction interaction over advanced editing feature
 
 Priority: 2
 Area: Canvas
-Status: pending
+Status: current
 Depends on: implement-canvas-pen-and-viewport
 
 Goal:
