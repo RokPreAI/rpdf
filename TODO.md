@@ -2,21 +2,21 @@
 
 ## Current TODOs
 
-- [ ] 2 Canvas add-canvas-assets-and-backgrounds
+- [ ] 4 Ocr add-text-fallback-and-warning-flow
 
 ## Active TODOs
 
-- [ ] 2 Pdf add-pdf-viewer-and-navigation
-- [ ] 2 Annotation add-pdf-and-canvas-annotation-tools
-- [ ] 3 Export add-selection-aware-svg-export
-- [ ] 3 Recolor add-pdf-recolor-and-annotation-visibility
-- [ ] 3 Tts add-pdf-tts-and-highlight-modes
-- [ ] 4 Ocr add-text-fallback-and-warning-flow
 - [ ] 4 Persistence add-save-load-and-recovery
 - [ ] 5 Validation add-offline-acceptance-checks
 
 ## Done TODOs
 
+- [x] 3 Tts add-pdf-tts-and-highlight-modes
+- [x] 3 Recolor add-pdf-recolor-and-annotation-visibility
+- [x] 3 Export add-selection-aware-svg-export
+- [x] 2 Annotation add-pdf-and-canvas-annotation-tools
+- [x] 2 Pdf add-pdf-viewer-and-navigation
+- [x] 2 Canvas add-canvas-assets-and-backgrounds
 - [x] 1 Canvas implement-canvas-pen-and-viewport
 - [x] 1 Foundation bootstrap-desktop-app-shell
 - [x] 0 Foundation define-document-models
@@ -111,7 +111,7 @@ Prioritize directness and low-friction interaction over advanced editing feature
 
 Priority: 2
 Area: Canvas
-Status: current
+Status: done
 Depends on: implement-canvas-pen-and-viewport
 
 Goal:
@@ -140,7 +140,7 @@ Imported PDF pages are visual elements in canvas mode and must remain usable reg
 
 Priority: 2
 Area: Pdf
-Status: pending
+Status: done
 Depends on: define-document-models, bootstrap-desktop-app-shell
 
 Goal:
@@ -168,7 +168,7 @@ Keep the PDF workspace narrow and reading-focused.
 
 Priority: 2
 Area: Annotation
-Status: pending
+Status: done
 Depends on: implement-canvas-pen-and-viewport, add-pdf-viewer-and-navigation
 
 Goal:
@@ -197,7 +197,7 @@ This task should not depend on TTS or OCR to be useful.
 
 Priority: 3
 Area: Export
-Status: pending
+Status: done
 Depends on: add-canvas-assets-and-backgrounds, add-pdf-and-canvas-annotation-tools
 
 Goal:
@@ -226,7 +226,7 @@ Be explicit about why a target is ineligible instead of silently degrading the r
 
 Priority: 3
 Area: Recolor
-Status: pending
+Status: done
 Depends on: add-pdf-viewer-and-navigation, add-pdf-and-canvas-annotation-tools
 
 Goal:
@@ -254,7 +254,7 @@ Keep the behavior consistent with “viewing aid first, optional output choice s
 
 Priority: 3
 Area: Tts
-Status: pending
+Status: done
 Depends on: add-pdf-viewer-and-navigation
 
 Goal:
@@ -282,7 +282,7 @@ This task can start with native text flows. OCR fallback belongs to a later task
 
 Priority: 4
 Area: Ocr
-Status: pending
+Status: current
 Depends on: add-pdf-tts-and-highlight-modes
 
 Goal:

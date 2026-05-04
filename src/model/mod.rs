@@ -187,8 +187,15 @@ pub enum AnnotationLayerRole {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PdfAnnotation {
-    PenStroke(PenStrokeItem),
+    PenStroke(PdfPenStrokeAnnotation),
     TextNote(PdfTextNote),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfPenStrokeAnnotation {
+    pub annotation_id: String,
+    pub page_index: usize,
+    pub stroke: PenStrokeItem,
 }
 
 #[derive(Debug, Clone, PartialEq)]
