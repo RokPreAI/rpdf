@@ -2,15 +2,18 @@
 
 ## Current TODOs
 
-- [ ] 4 Ocr add-text-fallback-and-warning-flow
+- [ ] 1 Ui extract-mode-shells-and-shared-ui-state
 
 ## Active TODOs
 
-- [ ] 4 Persistence add-save-load-and-recovery
-- [ ] 5 Validation add-offline-acceptance-checks
+- [ ] 1 Services formalize-reading-and-export-services
+- [ ] 2 Ocr add-text-fallback-and-warning-flow
+- [ ] 2 Persistence add-save-load-and-recovery
+- [ ] 3 Validation add-offline-acceptance-checks
 
 ## Done TODOs
 
+- [x] 0 Architecture refactor-app-into-modules
 - [x] 3 Tts add-pdf-tts-and-highlight-modes
 - [x] 3 Recolor add-pdf-recolor-and-annotation-visibility
 - [x] 3 Export add-selection-aware-svg-export
@@ -22,6 +25,90 @@
 - [x] 0 Foundation define-document-models
 
 ## Task Details
+
+### refactor-app-into-modules
+
+Priority: 0
+Area: Architecture
+Status: done
+Depends on: define-document-models, bootstrap-desktop-app-shell, implement-canvas-pen-and-viewport, add-canvas-assets-and-backgrounds, add-pdf-viewer-and-navigation, add-pdf-and-canvas-annotation-tools
+
+Goal:
+Move the current prototype away from a single large `src/app.rs` implementation and into a clearer module layout that matches the selected plan direction.
+
+Context:
+`PLAN.md` now makes maintainability the main priority and explicitly calls for clearer domain, application, service, adapter, and UI boundaries. The repo currently has most user-facing behavior concentrated in `src/app.rs`, which will make OCR fallback, persistence, and future PDF/TTS work harder to extend safely if left as-is.
+
+Expected changes:
+- Introduce new source modules and directories under `src/` that separate app shell concerns from canvas behavior, PDF behavior, shared UI state, and reusable helpers.
+- Move substantial logic out of `src/app.rs` without changing the user-visible feature set completed in the priority `0-3` band.
+- Update `src/lib.rs`, `src/main.rs`, and imports to match the new layout.
+- Keep the existing `model` layer aligned with the new structure instead of duplicating state definitions ad hoc.
+
+Acceptance criteria:
+- `src/app.rs` no longer acts as the single home for most product behavior.
+- The codebase has a clear starting separation between app shell, mode-specific behavior, and shared helpers.
+- Existing canvas, PDF, recolor, TTS, and SVG-export behaviors still compile and remain reachable after the refactor.
+- A later worker can add OCR fallback or persistence behavior without first re-planning the file layout.
+
+Notes:
+This is a structure-first task, not a user-visible feature expansion. Prefer moving real ownership boundaries into code over inventing empty folders.
+
+### extract-mode-shells-and-shared-ui-state
+
+Priority: 1
+Area: Ui
+Status: current
+Depends on: refactor-app-into-modules
+
+Goal:
+Separate Infinite Canvas Mode and PDF Mode into clearer UI shells while preserving shared tool state only where it genuinely belongs.
+
+Context:
+The plan keeps both modes first-class but distinct. After the initial structural refactor, the next UI-level step is to stop treating mode behavior as one long control flow and instead give each mode clearer ownership over its rendering, commands, and visible tools.
+
+Expected changes:
+- Dedicated modules for Canvas Mode UI and PDF Mode UI.
+- Clearer ownership of mode-specific commands, toolbars, and view state.
+- Shared UI state extracted only for truly shared concerns such as common tool settings, selection state, or global commands.
+- Reduced mode-switch branching spread across unrelated functions.
+
+Acceptance criteria:
+- Canvas Mode and PDF Mode have clearer code-level boundaries in the UI layer.
+- Mode-specific tools and rendering paths are easier to trace without reading one large mixed file.
+- Shared UI state is explicit rather than hidden in broad app-level structs.
+- The visual distinction between the two modes remains intact after the extraction.
+
+Notes:
+Do not force all behavior into shared abstractions. Duplication is acceptable when it keeps the mode mental models cleaner.
+
+### formalize-reading-and-export-services
+
+Priority: 1
+Area: Services
+Status: pending
+Depends on: refactor-app-into-modules
+
+Goal:
+Introduce explicit service boundaries for PDF reading support, TTS launching, and export decisions so later OCR and persistence work no longer depends on direct ad hoc calls from UI code.
+
+Context:
+`PLAN.md` selected a modular-monolith direction with adapter boundaries. The current prototype already performs PDF reading, TTS triggering, and export gating, but those behaviors should be moved behind clearer interfaces before more fallback logic is layered on top.
+
+Expected changes:
+- Service traits or equivalent internal interfaces for PDF text access, reading-support fallback decisions, TTS invocation, and export eligibility.
+- Adapter modules for the current concrete behavior, including the local speech path already in use.
+- Call-site cleanup so UI code requests capabilities instead of owning low-level behavior directly.
+- Shared warning/error types where needed for later OCR fallback and export refusal states.
+
+Acceptance criteria:
+- Reading-support and export behavior can be invoked through explicit internal boundaries instead of scattered direct calls.
+- The current TTS and export behavior still works through the new interfaces.
+- OCR fallback can be added later without first untangling UI-owned service logic.
+- Export refusal and reading-support warnings have a clearer home than ad hoc UI conditionals.
+
+Notes:
+This task is about internal boundaries, not swapping backends yet. Keep the current concrete implementations unless a small change is required to make the interface real.
 
 ### define-document-models
 
@@ -280,10 +367,10 @@ This task can start with native text flows. OCR fallback belongs to a later task
 
 ### add-text-fallback-and-warning-flow
 
-Priority: 4
+Priority: 2
 Area: Ocr
-Status: current
-Depends on: add-pdf-tts-and-highlight-modes
+Status: pending
+Depends on: add-pdf-tts-and-highlight-modes, formalize-reading-and-export-services
 
 Goal:
 Add the required fallback order for unreliable PDF text: native text first, OCR second, and a clear user warning when reliable text-based reading support still cannot be produced.
@@ -308,10 +395,10 @@ This task should focus on correctness of fallback behavior, not perfection of OC
 
 ### add-save-load-and-recovery
 
-Priority: 4
+Priority: 2
 Area: Persistence
 Status: pending
-Depends on: define-document-models, implement-canvas-pen-and-viewport, add-pdf-and-canvas-annotation-tools
+Depends on: define-document-models, add-pdf-and-canvas-annotation-tools, refactor-app-into-modules
 
 Goal:
 Implement save, load, autosave, and recovery behavior for editable user work while preserving the project's offline-first and portable-output goals.
@@ -336,10 +423,10 @@ Do not let recovery-only storage become the only way users retain their work.
 
 ### add-offline-acceptance-checks
 
-Priority: 5
+Priority: 3
 Area: Validation
 Status: pending
-Depends on: bootstrap-desktop-app-shell, add-canvas-assets-and-backgrounds, add-pdf-and-canvas-annotation-tools, add-selection-aware-svg-export, add-pdf-recolor-and-annotation-visibility, add-pdf-tts-and-highlight-modes, add-text-fallback-and-warning-flow, add-save-load-and-recovery
+Depends on: refactor-app-into-modules, extract-mode-shells-and-shared-ui-state, formalize-reading-and-export-services, add-text-fallback-and-warning-flow, add-save-load-and-recovery
 
 Goal:
 Add repeatable verification for the specification's acceptance checks so future workers can confirm the product remains aligned with the contract.
