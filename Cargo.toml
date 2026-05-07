@@ -13,3 +13,4 @@ path = "src/main.rs"
 
 [dependencies]
 eframe = "0.31"
+rfd = "0.15"
