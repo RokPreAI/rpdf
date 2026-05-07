@@ -211,6 +211,7 @@ pub struct PendingStroke {
 #[derive(Debug, Clone)]
 pub struct PdfInteractionState {
     pub pending_open_path: String,
+    pub status_message: String,
     pub page_count: usize,
     pub active_stroke: Option<PendingStroke>,
     pub next_annotation_id: u64,
@@ -221,6 +222,7 @@ impl Default for PdfInteractionState {
     fn default() -> Self {
         Self {
             pending_open_path: String::new(),
+            status_message: String::new(),
             page_count: 1,
             active_stroke: None,
             next_annotation_id: 0,

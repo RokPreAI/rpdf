@@ -100,6 +100,88 @@ pub(super) fn best_effort_pdf_page_count(path: &str) -> usize {
     content.matches("/Type /Page").count().max(1)
 }
 
+pub(super) fn pick_pdf_path() -> Result<Option<String>, String> {
+    match try_tk_pdf_path() {
+        Ok(path) => Ok(path),
+        Err(tk_error) => match try_zenity_pdf_path() {
+            Ok(path) => Ok(path),
+            Err(zenity_error) => Err(format!(
+                "tkinter picker failed: {tk_error}; zenity fallback failed: {zenity_error}"
+            )),
+        },
+    }
+}
+
+fn try_zenity_pdf_path() -> Result<Option<String>, String> {
+    let output = std::process::Command::new("zenity")
+        .args([
+            "--file-selection",
+            "--title=Open PDF",
+            "--file-filter=PDF files | *.pdf",
+            "--file-filter=All files | *",
+        ])
+        .output()
+        .map_err(|error| format!("could not launch zenity: {error}"))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else if output.status.code() == Some(1) {
+        Ok(None)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let reason = if stderr.is_empty() {
+            format!("exit status {:?}", output.status.code())
+        } else {
+            stderr
+        };
+        Err(reason)
+    }
+}
+
+fn try_tk_pdf_path() -> Result<Option<String>, String> {
+    let script = r#"
+import tkinter as tk
+from tkinter import filedialog
+
+root = tk.Tk()
+root.withdraw()
+root.update()
+path = filedialog.askopenfilename(
+    title="Open PDF",
+    filetypes=[("PDF files", "*.pdf"), ("All files", "*")],
+)
+root.destroy()
+print(path, end="")
+"#;
+
+    let output = std::process::Command::new("python3")
+        .args(["-c", script])
+        .output()
+        .map_err(|error| format!("could not launch python3 tkinter picker: {error}"))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let reason = if stderr.is_empty() {
+            format!("exit status {:?}", output.status.code())
+        } else {
+            stderr
+        };
+        Err(reason)
+    }
+}
+
 pub(super) fn centered_page_rect(rect: egui::Rect, zoom: f32) -> egui::Rect {
     let width = (560.0 * zoom.clamp(0.75, 1.4)).min((rect.width() - 48.0).max(120.0));
     let height = (760.0 * zoom.clamp(0.75, 1.4)).min((rect.height() - 48.0).max(160.0));

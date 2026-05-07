@@ -70,6 +70,10 @@ impl RpdfApp {
                 }
             });
 
+            if !self.shell.pdf_interaction.status_message.is_empty() {
+                ui.label(&self.shell.pdf_interaction.status_message);
+            }
+
             ui.horizontal(|ui| {
                 if ui.button("Previous").clicked() {
                     self.step_pdf_page(-1);
@@ -301,17 +305,41 @@ impl RpdfApp {
     }
 
     fn open_pdf_document(&mut self) {
-        let path = self.shell.pdf_interaction.pending_open_path.trim().to_string();
+        let mut path = self.shell.pdf_interaction.pending_open_path.trim().to_string();
         if path.is_empty() {
+            match super::util::pick_pdf_path() {
+                Ok(Some(selected_path)) => {
+                    path = selected_path;
+                    self.shell.pdf_interaction.pending_open_path = path.clone();
+                }
+                Ok(None) => {
+                    self.shell.pdf_interaction.status_message =
+                        "PDF open canceled.".to_string();
+                    return;
+                }
+                Err(error) => {
+                    self.shell.pdf_interaction.status_message =
+                        format!("PDF picker failed: {error}");
+                    return;
+                }
+            }
+        }
+
+        let pdf_path = std::path::Path::new(&path);
+        if !pdf_path.exists() {
+            self.shell.pdf_interaction.status_message =
+                format!("PDF path does not exist: {path}");
             return;
         }
 
         self.shell.pdf.source = PdfSource::FilePath(path.clone().into());
-        self.shell.pdf.metadata.title = Some(file_label(std::path::Path::new(&path)));
+        self.shell.pdf.metadata.title = Some(file_label(pdf_path));
         self.shell.pdf.viewport.page_index = 0;
         self.shell.pdf.viewport.scroll_offset = Point { x: 0.0, y: 0.0 };
         self.shell.pdf_interaction.page_count = best_effort_pdf_page_count(&path).max(1);
         self.startup.last_opened_path = Some(path);
+        self.shell.pdf_interaction.status_message =
+            "Opened PDF document.".to_string();
     }
 
     fn step_pdf_page(&mut self, delta: isize) {
