@@ -1,5 +1,6 @@
 mod canvas;
 mod pdf;
+mod services;
 mod util;
 
 use crate::model::{
@@ -12,6 +13,7 @@ use crate::model::{
     TextSupportSource, TtsState, ViewportState, WarningCode, WorkspaceMode,
 };
 use eframe::egui;
+use services::AppServices;
 use std::time::Instant;
 use util::{
     default_palette, muted_grid_color,
@@ -20,6 +22,7 @@ use util::{
 pub struct RpdfApp {
     startup: StartupState,
     shell: ShellState,
+    services: AppServices,
 }
 
 impl Default for RpdfApp {
@@ -27,6 +30,7 @@ impl Default for RpdfApp {
         Self {
             startup: StartupState::default(),
             shell: ShellState::default(),
+            services: AppServices::default(),
         }
     }
 }

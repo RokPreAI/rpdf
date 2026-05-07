@@ -1,7 +1,6 @@
 use super::util::{
-    accent_color, build_svg_document, canvas_item_id, default_background_style,
-    default_recolor_profile, file_label, item_kind_label, latest_pressure, note_text_style,
-    push_stroke_point, to_color32,
+    accent_color, canvas_item_id, default_background_style, default_recolor_profile, file_label,
+    item_kind_label, latest_pressure, note_text_style, push_stroke_point, to_color32,
 };
 use super::*;
 
@@ -727,20 +726,22 @@ impl RpdfApp {
             return;
         }
 
-        if let Some(reason) = target_items
-            .iter()
-            .find_map(|item| match item.svg_compatibility() {
-                crate::model::SvgCompatibility::Compatible => None,
-                crate::model::SvgCompatibility::Incompatible(reason) => Some(reason),
-            })
+        if let Some(reason) = self
+            .services
+            .canvas_export
+            .first_incompatibility(&target_items)
         {
             self.shell.canvas_mode.ui.export_status =
                 format!("SVG export unavailable for this target: {:?}.", reason);
             return;
         }
 
-        let svg = build_svg_document(&target_items);
-        match std::fs::write(&export_path, svg) {
+        let svg = self.services.canvas_export.build_svg_document(&target_items);
+        match self
+            .services
+            .canvas_export
+            .write_svg_document(&export_path, svg)
+        {
             Ok(()) => {
                 self.shell.canvas_mode.ui.export_status = format!("Exported SVG to {export_path}");
             }

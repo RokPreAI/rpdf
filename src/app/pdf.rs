@@ -1,11 +1,8 @@
 use super::util::{
-    best_effort_extract_pdf_text, best_effort_pdf_page_count, build_reading_spans,
     centered_page_rect, default_recolor_profile, file_label, from_color32, note_text_style,
     pdf_page_to_screen, preview_brush, render_palette_editor, screen_to_pdf_page, to_color32,
 };
 use super::*;
-use std::process::Command;
-
 impl RpdfApp {
     pub(super) fn render_pdf_workspace(&mut self, ui: &mut egui::Ui) {
         ui.heading("PDF Mode");
@@ -325,7 +322,7 @@ impl RpdfApp {
     fn open_pdf_document(&mut self) {
         let mut path = self.shell.pdf_mode.ui.pending_open_path.trim().to_string();
         if path.is_empty() {
-            match super::util::pick_pdf_path() {
+            match self.services.reading_support.pick_pdf_path() {
                 Ok(Some(selected_path)) => {
                     path = selected_path;
                     self.shell.pdf_mode.ui.pending_open_path = path.clone();
@@ -354,7 +351,11 @@ impl RpdfApp {
         self.shell.pdf_mode.session.metadata.title = Some(file_label(pdf_path));
         self.shell.pdf_mode.session.viewport.page_index = 0;
         self.shell.pdf_mode.session.viewport.scroll_offset = Point { x: 0.0, y: 0.0 };
-        self.shell.pdf_mode.ui.page_count = best_effort_pdf_page_count(&path).max(1);
+        self.shell.pdf_mode.ui.page_count = self
+            .services
+            .reading_support
+            .best_effort_pdf_page_count(&path)
+            .max(1);
         self.startup.last_opened_path = Some(path);
         self.shell.pdf_mode.ui.status_message =
             "Opened PDF document.".to_string();
@@ -441,7 +442,10 @@ impl RpdfApp {
             }
         };
 
-        let extracted = best_effort_extract_pdf_text(&path.to_string_lossy());
+        let extracted = self
+            .services
+            .reading_support
+            .best_effort_extract_pdf_text(&path.to_string_lossy());
         if extracted.trim().is_empty() {
             self.shell.pdf_mode.session.reading_support.text_source = TextSupportSource::Unavailable;
             self.shell.pdf_mode.session.reading_support.reliability = ReadingReliability::Unreliable;
@@ -457,7 +461,7 @@ impl RpdfApp {
             return;
         }
 
-        let spans = build_reading_spans(
+        let spans = self.services.reading_support.build_reading_spans(
             &extracted,
             self.shell.pdf_mode.session.reading_support.highlight_mode,
         );
@@ -466,7 +470,7 @@ impl RpdfApp {
         }
 
         let excerpt = spans.join(" ");
-        let _ = Command::new("spd-say").arg(&excerpt).spawn();
+        self.services.reading_support.start_local_tts(&excerpt);
 
         self.shell.pdf_mode.session.reading_support.text_source = TextSupportSource::NativePdfText;
         self.shell.pdf_mode.session.reading_support.reliability = ReadingReliability::BestEffort;

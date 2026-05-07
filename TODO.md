@@ -2,16 +2,16 @@
 
 ## Current TODOs
 
-- [ ] 1 Services formalize-reading-and-export-services
+- [ ] 2 Ocr add-text-fallback-and-warning-flow
 
 ## Active TODOs
 
-- [ ] 2 Ocr add-text-fallback-and-warning-flow
 - [ ] 2 Persistence add-save-load-and-recovery
 - [ ] 3 Validation add-offline-acceptance-checks
 
 ## Done TODOs
 
+- [x] 1 Services formalize-reading-and-export-services
 - [x] 1 Ui extract-mode-shells-and-shared-ui-state
 - [x] 0 Architecture refactor-app-into-modules
 - [x] 3 Tts add-pdf-tts-and-highlight-modes
@@ -86,7 +86,7 @@ Do not force all behavior into shared abstractions. Duplication is acceptable wh
 
 Priority: 1
 Area: Services
-Status: current
+Status: done
 Depends on: refactor-app-into-modules
 
 Goal:
