@@ -19,7 +19,7 @@ impl RpdfApp {
         let rect = response.rect;
         painter.rect_filled(rect, 12.0, egui::Color32::from_rgb(20, 21, 25));
 
-        let page_rect = centered_page_rect(rect, self.shell.pdf.viewport.zoom);
+        let page_rect = centered_page_rect(rect, self.shell.pdf_mode.session.viewport.zoom);
         self.handle_pdf_drawing(ui, page_rect);
         let (page_fill, page_stroke) = self.current_pdf_page_colors();
         painter.rect_filled(page_rect, 8.0, page_fill);
@@ -30,7 +30,7 @@ impl RpdfApp {
             egui::StrokeKind::Middle,
         );
 
-        let source_label = match &self.shell.pdf.source {
+        let source_label = match &self.shell.pdf_mode.session.source {
             PdfSource::FilePath(path) if !path.as_os_str().is_empty() => file_label(path),
             _ => "No PDF opened".to_string(),
         };
@@ -41,8 +41,8 @@ impl RpdfApp {
             format!(
                 "{}\nPage {} of {}",
                 source_label,
-                self.shell.pdf.viewport.page_index + 1,
-                self.shell.pdf_interaction.page_count
+                self.shell.pdf_mode.session.viewport.page_index + 1,
+                self.shell.pdf_mode.ui.page_count
             ),
             egui::FontId::proportional(22.0),
             page_stroke,
@@ -64,14 +64,14 @@ impl RpdfApp {
         ui.group(|ui| {
             ui.horizontal(|ui| {
                 ui.label("PDF path:");
-                ui.text_edit_singleline(&mut self.shell.pdf_interaction.pending_open_path);
+                ui.text_edit_singleline(&mut self.shell.pdf_mode.ui.pending_open_path);
                 if ui.button("Open PDF").clicked() {
                     self.open_pdf_document();
                 }
             });
 
-            if !self.shell.pdf_interaction.status_message.is_empty() {
-                ui.label(&self.shell.pdf_interaction.status_message);
+            if !self.shell.pdf_mode.ui.status_message.is_empty() {
+                ui.label(&self.shell.pdf_mode.ui.status_message);
             }
 
             ui.horizontal(|ui| {
@@ -82,36 +82,46 @@ impl RpdfApp {
                     self.step_pdf_page(1);
                 }
 
-                let mut display_page = self.shell.pdf.viewport.page_index + 1;
+                let mut display_page = self.shell.pdf_mode.session.viewport.page_index + 1;
                 ui.label("Page:");
                 if ui
                     .add(
                         egui::DragValue::new(&mut display_page)
-                            .range(1..=self.shell.pdf_interaction.page_count.max(1)),
+                            .range(1..=self.shell.pdf_mode.ui.page_count.max(1)),
                     )
                     .changed()
                 {
-                    self.shell.pdf.viewport.page_index = display_page
+                    self.shell.pdf_mode.session.viewport.page_index = display_page
                         .saturating_sub(1)
-                        .min(self.shell.pdf_interaction.page_count.saturating_sub(1));
+                        .min(self.shell.pdf_mode.ui.page_count.saturating_sub(1));
                 }
 
-                ui.label(format!("of {}", self.shell.pdf_interaction.page_count));
+                ui.label(format!("of {}", self.shell.pdf_mode.ui.page_count));
                 ui.separator();
                 ui.label("Document-focused workspace");
             });
 
             ui.separator();
-            let mut recolor_enabled = self.shell.pdf.view.recolor.current_profile.is_some();
+            let mut recolor_enabled =
+                self.shell.pdf_mode.session.view.recolor.current_profile.is_some();
             if ui.checkbox(&mut recolor_enabled, "Enable recolor view").changed() {
                 if recolor_enabled {
-                    self.shell.pdf.view.recolor.current_profile = Some(default_recolor_profile());
+                    self.shell.pdf_mode.session.view.recolor.current_profile =
+                        Some(default_recolor_profile());
                 } else {
-                    self.shell.pdf.view.recolor.current_profile = None;
+                    self.shell.pdf_mode.session.view.recolor.current_profile = None;
                 }
             }
 
-            if let Some(profile) = self.shell.pdf.view.recolor.current_profile.as_mut() {
+            if let Some(profile) = self
+                .shell
+                .pdf_mode
+                .session
+                .view
+                .recolor
+                .current_profile
+                .as_mut()
+            {
                 ui.horizontal(|ui| {
                     ui.label("Foreground");
                     let mut foreground = to_color32(profile.foreground);
@@ -130,12 +140,12 @@ impl RpdfApp {
             ui.horizontal(|ui| {
                 ui.label("PDF export recolor:");
                 ui.selectable_value(
-                    &mut self.shell.pdf.view.recolor.export_mode,
+                    &mut self.shell.pdf_mode.session.view.recolor.export_mode,
                     RecolorExportMode::PreserveOriginalAppearance,
                     "Preserve original",
                 );
                 ui.selectable_value(
-                    &mut self.shell.pdf.view.recolor.export_mode,
+                    &mut self.shell.pdf_mode.session.view.recolor.export_mode,
                     RecolorExportMode::IncludeCurrentRecoloring,
                     "Include recolor",
                 );
@@ -145,12 +155,12 @@ impl RpdfApp {
                 render_palette_editor(
                     ui,
                     "Normal",
-                    &mut self.shell.pdf.view.annotation_visibility.normal_view,
+                    &mut self.shell.pdf_mode.session.view.annotation_visibility.normal_view,
                 );
                 render_palette_editor(
                     ui,
                     "Recolored",
-                    &mut self.shell.pdf.view.annotation_visibility.recolored_view,
+                    &mut self.shell.pdf_mode.session.view.annotation_visibility.recolored_view,
                 );
             });
 
@@ -158,17 +168,17 @@ impl RpdfApp {
             ui.horizontal(|ui| {
                 ui.label("Highlight mode:");
                 ui.selectable_value(
-                    &mut self.shell.pdf.reading_support.highlight_mode,
+                    &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
                     HighlightMode::Word,
                     "Word",
                 );
                 ui.selectable_value(
-                    &mut self.shell.pdf.reading_support.highlight_mode,
+                    &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
                     HighlightMode::Line,
                     "Line",
                 );
                 ui.selectable_value(
-                    &mut self.shell.pdf.reading_support.highlight_mode,
+                    &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
                     HighlightMode::Sentence,
                     "Sentence",
                 );
@@ -181,10 +191,13 @@ impl RpdfApp {
                 if ui.button("Stop TTS").clicked() {
                     self.stop_pdf_tts();
                 }
-                ui.label(format!("Playback: {:?}", self.shell.pdf.reading_support.tts.playback));
+                ui.label(format!(
+                    "Playback: {:?}",
+                    self.shell.pdf_mode.session.reading_support.tts.playback
+                ));
             });
 
-            if let Some(warning) = &self.shell.pdf.reading_support.warning {
+            if let Some(warning) = &self.shell.pdf_mode.session.reading_support.warning {
                 ui.label(format!("Reading warning: {}", warning.message));
             }
         });
@@ -200,7 +213,8 @@ impl RpdfApp {
                 let pressure = super::util::latest_pressure(ui, page_rect).unwrap_or(0.5);
                 let active = self
                     .shell
-                    .pdf_interaction
+                    .pdf_mode
+                    .ui
                     .active_stroke
                     .get_or_insert_with(|| PendingStroke { points: Vec::new() });
                 super::util::push_stroke_point(active, page_point, pressure);
@@ -214,7 +228,7 @@ impl RpdfApp {
     }
 
     fn commit_pdf_stroke(&mut self) {
-        let Some(active_stroke) = self.shell.pdf_interaction.active_stroke.take() else {
+        let Some(active_stroke) = self.shell.pdf_mode.ui.active_stroke.take() else {
             return;
         };
 
@@ -223,12 +237,16 @@ impl RpdfApp {
         }
 
         let id = self.next_pdf_annotation_id();
-        let tool = self.shell.annotation_tools.current_tool;
+        let tool = self.shell.shared_ui.annotation_tools.current_tool;
 
-        self.shell.pdf.annotations.push(crate::model::PdfAnnotation::PenStroke(
+        self.shell
+            .pdf_mode
+            .session
+            .annotations
+            .push(crate::model::PdfAnnotation::PenStroke(
             PdfPenStrokeAnnotation {
                 annotation_id: format!("pdf-stroke-{id}"),
-                page_index: self.shell.pdf.viewport.page_index,
+                page_index: self.shell.pdf_mode.session.viewport.page_index,
                 stroke: PenStrokeItem {
                     item_id: format!("pdf-stroke-item-{id}"),
                     points: active_stroke.points,
@@ -240,10 +258,10 @@ impl RpdfApp {
     }
 
     fn paint_pdf_annotations(&self, painter: &egui::Painter, page_rect: egui::Rect) {
-        for annotation in &self.shell.pdf.annotations {
+        for annotation in &self.shell.pdf_mode.session.annotations {
             match annotation {
                 crate::model::PdfAnnotation::PenStroke(stroke)
-                    if stroke.page_index == self.shell.pdf.viewport.page_index =>
+                    if stroke.page_index == self.shell.pdf_mode.session.viewport.page_index =>
                 {
                     self.paint_pdf_stroke(
                         painter,
@@ -254,7 +272,7 @@ impl RpdfApp {
                     );
                 }
                 crate::model::PdfAnnotation::TextNote(note)
-                    if note.page_index == self.shell.pdf.viewport.page_index =>
+                    if note.page_index == self.shell.pdf_mode.session.viewport.page_index =>
                 {
                     let pos = pdf_page_to_screen(page_rect, note.anchor.origin);
                     painter.text(
@@ -271,10 +289,10 @@ impl RpdfApp {
     }
 
     fn paint_pdf_active_stroke(&self, painter: &egui::Painter, page_rect: egui::Rect) {
-        let Some(stroke) = &self.shell.pdf_interaction.active_stroke else {
+        let Some(stroke) = &self.shell.pdf_mode.ui.active_stroke else {
             return;
         };
-        let preview = preview_brush(self.shell.annotation_tools.current_tool);
+        let preview = preview_brush(self.shell.shared_ui.annotation_tools.current_tool);
         self.paint_pdf_stroke(
             painter,
             page_rect,
@@ -305,20 +323,20 @@ impl RpdfApp {
     }
 
     fn open_pdf_document(&mut self) {
-        let mut path = self.shell.pdf_interaction.pending_open_path.trim().to_string();
+        let mut path = self.shell.pdf_mode.ui.pending_open_path.trim().to_string();
         if path.is_empty() {
             match super::util::pick_pdf_path() {
                 Ok(Some(selected_path)) => {
                     path = selected_path;
-                    self.shell.pdf_interaction.pending_open_path = path.clone();
+                    self.shell.pdf_mode.ui.pending_open_path = path.clone();
                 }
                 Ok(None) => {
-                    self.shell.pdf_interaction.status_message =
+                    self.shell.pdf_mode.ui.status_message =
                         "PDF open canceled.".to_string();
                     return;
                 }
                 Err(error) => {
-                    self.shell.pdf_interaction.status_message =
+                    self.shell.pdf_mode.ui.status_message =
                         format!("PDF picker failed: {error}");
                     return;
                 }
@@ -327,37 +345,43 @@ impl RpdfApp {
 
         let pdf_path = std::path::Path::new(&path);
         if !pdf_path.exists() {
-            self.shell.pdf_interaction.status_message =
+            self.shell.pdf_mode.ui.status_message =
                 format!("PDF path does not exist: {path}");
             return;
         }
 
-        self.shell.pdf.source = PdfSource::FilePath(path.clone().into());
-        self.shell.pdf.metadata.title = Some(file_label(pdf_path));
-        self.shell.pdf.viewport.page_index = 0;
-        self.shell.pdf.viewport.scroll_offset = Point { x: 0.0, y: 0.0 };
-        self.shell.pdf_interaction.page_count = best_effort_pdf_page_count(&path).max(1);
+        self.shell.pdf_mode.session.source = PdfSource::FilePath(path.clone().into());
+        self.shell.pdf_mode.session.metadata.title = Some(file_label(pdf_path));
+        self.shell.pdf_mode.session.viewport.page_index = 0;
+        self.shell.pdf_mode.session.viewport.scroll_offset = Point { x: 0.0, y: 0.0 };
+        self.shell.pdf_mode.ui.page_count = best_effort_pdf_page_count(&path).max(1);
         self.startup.last_opened_path = Some(path);
-        self.shell.pdf_interaction.status_message =
+        self.shell.pdf_mode.ui.status_message =
             "Opened PDF document.".to_string();
     }
 
     fn step_pdf_page(&mut self, delta: isize) {
-        let current = self.shell.pdf.viewport.page_index as isize;
-        let max = self.shell.pdf_interaction.page_count.saturating_sub(1) as isize;
-        self.shell.pdf.viewport.page_index = (current + delta).clamp(0, max) as usize;
+        let current = self.shell.pdf_mode.session.viewport.page_index as isize;
+        let max = self.shell.pdf_mode.ui.page_count.saturating_sub(1) as isize;
+        self.shell.pdf_mode.session.viewport.page_index = (current + delta).clamp(0, max) as usize;
     }
 
     pub(super) fn add_pdf_note(&mut self) {
-        let note = self.shell.annotation_tools.pending_note_text.trim().to_string();
+        let note = self
+            .shell
+            .shared_ui
+            .annotation_tools
+            .pending_note_text
+            .trim()
+            .to_string();
         if note.is_empty() {
             return;
         }
 
         let id = self.next_pdf_annotation_id();
-        self.shell.pdf.annotations.push(crate::model::PdfAnnotation::TextNote(PdfTextNote {
+        self.shell.pdf_mode.session.annotations.push(crate::model::PdfAnnotation::TextNote(PdfTextNote {
             note_id: format!("pdf-note-{id}"),
-            page_index: self.shell.pdf.viewport.page_index,
+            page_index: self.shell.pdf_mode.session.viewport.page_index,
             anchor: Rect {
                 origin: Point { x: 64.0, y: 96.0 },
                 size: Size {
@@ -368,20 +392,20 @@ impl RpdfApp {
             text: note,
             style: note_text_style(),
         }));
-        self.shell.annotation_tools.pending_note_text.clear();
+        self.shell.shared_ui.annotation_tools.pending_note_text.clear();
     }
 
     fn next_pdf_annotation_id(&mut self) -> u64 {
-        let next = self.shell.pdf_interaction.next_annotation_id;
-        self.shell.pdf_interaction.next_annotation_id += 1;
+        let next = self.shell.pdf_mode.ui.next_annotation_id;
+        self.shell.pdf_mode.ui.next_annotation_id += 1;
         next
     }
 
     fn current_annotation_palette(&self) -> &AnnotationPalette {
-        if self.shell.pdf.view.recolor.current_profile.is_some() {
-            &self.shell.pdf.view.annotation_visibility.recolored_view
+        if self.shell.pdf_mode.session.view.recolor.current_profile.is_some() {
+            &self.shell.pdf_mode.session.view.annotation_visibility.recolored_view
         } else {
-            &self.shell.pdf.view.annotation_visibility.normal_view
+            &self.shell.pdf_mode.session.view.annotation_visibility.normal_view
         }
     }
 
@@ -394,7 +418,7 @@ impl RpdfApp {
     }
 
     fn current_pdf_page_colors(&self) -> (egui::Color32, egui::Color32) {
-        if let Some(profile) = &self.shell.pdf.view.recolor.current_profile {
+        if let Some(profile) = &self.shell.pdf_mode.session.view.recolor.current_profile {
             (to_color32(profile.background), to_color32(profile.foreground))
         } else {
             (
@@ -405,10 +429,11 @@ impl RpdfApp {
     }
 
     fn start_pdf_tts(&mut self) {
-        let path = match &self.shell.pdf.source {
+        let path = match &self.shell.pdf_mode.session.source {
             PdfSource::FilePath(path) if !path.as_os_str().is_empty() => path.clone(),
             _ => {
-                self.shell.pdf.reading_support.warning = Some(crate::model::UserVisibleWarning {
+                self.shell.pdf_mode.session.reading_support.warning =
+                    Some(crate::model::UserVisibleWarning {
                     code: WarningCode::ReadingSupportUnavailable,
                     message: "Open a PDF before starting TTS.".to_string(),
                 });
@@ -418,20 +443,24 @@ impl RpdfApp {
 
         let extracted = best_effort_extract_pdf_text(&path.to_string_lossy());
         if extracted.trim().is_empty() {
-            self.shell.pdf.reading_support.text_source = TextSupportSource::Unavailable;
-            self.shell.pdf.reading_support.reliability = ReadingReliability::Unreliable;
-            self.shell.pdf.reading_support.warning = Some(crate::model::UserVisibleWarning {
+            self.shell.pdf_mode.session.reading_support.text_source = TextSupportSource::Unavailable;
+            self.shell.pdf_mode.session.reading_support.reliability = ReadingReliability::Unreliable;
+            self.shell.pdf_mode.session.reading_support.warning =
+                Some(crate::model::UserVisibleWarning {
                 code: WarningCode::WeakNativeText,
                 message: "Could not extract usable PDF text for TTS in the current pre-OCR mode."
                     .to_string(),
             });
-            self.shell.pdf_interaction.reading_session = None;
-            self.shell.pdf.reading_support.tts.playback = PlaybackState::Stopped;
-            self.shell.pdf.reading_support.tts.active_span = None;
+            self.shell.pdf_mode.ui.reading_session = None;
+            self.shell.pdf_mode.session.reading_support.tts.playback = PlaybackState::Stopped;
+            self.shell.pdf_mode.session.reading_support.tts.active_span = None;
             return;
         }
 
-        let spans = build_reading_spans(&extracted, self.shell.pdf.reading_support.highlight_mode);
+        let spans = build_reading_spans(
+            &extracted,
+            self.shell.pdf_mode.session.reading_support.highlight_mode,
+        );
         if spans.is_empty() {
             return;
         }
@@ -439,11 +468,11 @@ impl RpdfApp {
         let excerpt = spans.join(" ");
         let _ = Command::new("spd-say").arg(&excerpt).spawn();
 
-        self.shell.pdf.reading_support.text_source = TextSupportSource::NativePdfText;
-        self.shell.pdf.reading_support.reliability = ReadingReliability::BestEffort;
-        self.shell.pdf.reading_support.warning = None;
-        self.shell.pdf.reading_support.tts.playback = PlaybackState::Playing;
-        self.shell.pdf_interaction.reading_session = Some(ReadingPlaybackSession {
+        self.shell.pdf_mode.session.reading_support.text_source = TextSupportSource::NativePdfText;
+        self.shell.pdf_mode.session.reading_support.reliability = ReadingReliability::BestEffort;
+        self.shell.pdf_mode.session.reading_support.warning = None;
+        self.shell.pdf_mode.session.reading_support.tts.playback = PlaybackState::Playing;
+        self.shell.pdf_mode.ui.reading_session = Some(ReadingPlaybackSession {
             spans,
             started_at: Instant::now(),
             span_duration_ms: 1200,
@@ -451,17 +480,17 @@ impl RpdfApp {
     }
 
     fn stop_pdf_tts(&mut self) {
-        self.shell.pdf.reading_support.tts.playback = PlaybackState::Stopped;
-        self.shell.pdf.reading_support.tts.active_span = None;
-        self.shell.pdf_interaction.reading_session = None;
+        self.shell.pdf_mode.session.reading_support.tts.playback = PlaybackState::Stopped;
+        self.shell.pdf_mode.session.reading_support.tts.active_span = None;
+        self.shell.pdf_mode.ui.reading_session = None;
     }
 
     pub(super) fn tick_pdf_reading_support(&mut self) {
-        let Some(session) = &self.shell.pdf_interaction.reading_session else {
+        let Some(session) = &self.shell.pdf_mode.ui.reading_session else {
             return;
         };
 
-        if self.shell.pdf.reading_support.tts.playback != PlaybackState::Playing {
+        if self.shell.pdf_mode.session.reading_support.tts.playback != PlaybackState::Playing {
             return;
         }
 
@@ -474,8 +503,8 @@ impl RpdfApp {
 
         let span_height = 44.0;
         let y = 120.0 + span_height * index as f32;
-        self.shell.pdf.reading_support.tts.active_span = Some(crate::model::ReadingSpan {
-            page_index: self.shell.pdf.viewport.page_index,
+        self.shell.pdf_mode.session.reading_support.tts.active_span = Some(crate::model::ReadingSpan {
+            page_index: self.shell.pdf_mode.session.viewport.page_index,
             bounds: Rect {
                 origin: Point { x: 48.0, y },
                 size: Size {
@@ -488,10 +517,10 @@ impl RpdfApp {
     }
 
     fn paint_pdf_reading_highlight(&self, painter: &egui::Painter, page_rect: egui::Rect) {
-        let Some(span) = &self.shell.pdf.reading_support.tts.active_span else {
+        let Some(span) = &self.shell.pdf_mode.session.reading_support.tts.active_span else {
             return;
         };
-        if span.page_index != self.shell.pdf.viewport.page_index {
+        if span.page_index != self.shell.pdf_mode.session.viewport.page_index {
             return;
         }
 
@@ -499,7 +528,7 @@ impl RpdfApp {
             pdf_page_to_screen(page_rect, span.bounds.origin),
             egui::vec2(span.bounds.size.width, span.bounds.size.height),
         );
-        let color = match self.shell.pdf.reading_support.highlight_mode {
+        let color = match self.shell.pdf_mode.session.reading_support.highlight_mode {
             HighlightMode::Word => egui::Color32::from_rgba_premultiplied(255, 214, 10, 180),
             HighlightMode::Line => egui::Color32::from_rgba_premultiplied(58, 128, 247, 90),
             HighlightMode::Sentence => egui::Color32::from_rgba_premultiplied(96, 104, 122, 120),

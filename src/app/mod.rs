@@ -83,41 +83,55 @@ impl eframe::App for RpdfApp {
 impl RpdfApp {
     fn render_canvas_summary(&mut self, ui: &mut egui::Ui) {
         ui.heading("Canvas Root");
-        ui.label(format!("Items: {}", self.shell.canvas.items.len()));
-        ui.label(format!("Zoom: {:.2}", self.shell.canvas.viewport.zoom));
+        ui.label(format!("Items: {}", self.shell.canvas_mode.document.items.len()));
+        ui.label(format!("Zoom: {:.2}", self.shell.canvas_mode.document.viewport.zoom));
         ui.label(format!(
             "Origin: ({:.0}, {:.0})",
-            self.shell.canvas.viewport.origin.x, self.shell.canvas.viewport.origin.y
+            self.shell.canvas_mode.document.viewport.origin.x,
+            self.shell.canvas_mode.document.viewport.origin.y
         ));
-        ui.label(format!("Selection: {:?}", self.shell.canvas.selection));
-        ui.label(format!("Dirty: {}", self.shell.canvas.autosave.dirty));
+        ui.label(format!("Selection: {:?}", self.shell.canvas_mode.document.selection));
+        ui.label(format!("Dirty: {}", self.shell.canvas_mode.document.autosave.dirty));
         ui.label(format!(
             "Active stroke points: {}",
             self.shell
-                .canvas_interaction
+                .canvas_mode
+                .ui
                 .active_stroke
                 .as_ref()
                 .map_or(0, |stroke| stroke.points.len())
         ));
-        ui.label(format!("Tool: {:?}", self.shell.annotation_tools.current_tool));
-        ui.label(format!("Export target: {:?}", self.shell.canvas.selection));
+        ui.label(format!(
+            "Tool: {:?}",
+            self.shell.shared_ui.annotation_tools.current_tool
+        ));
+        ui.label(format!(
+            "Export target: {:?}",
+            self.shell.canvas_mode.document.selection
+        ));
     }
 
     fn render_pdf_summary(&self, ui: &mut egui::Ui) {
         ui.heading("PDF Root");
-        ui.label(format!("Page: {}", self.shell.pdf.viewport.page_index + 1));
-        ui.label(format!("Page count: {}", self.shell.pdf_interaction.page_count));
-        ui.label(format!("Zoom: {:.2}", self.shell.pdf.viewport.zoom));
+        ui.label(format!("Page: {}", self.shell.pdf_mode.session.viewport.page_index + 1));
+        ui.label(format!("Page count: {}", self.shell.pdf_mode.ui.page_count));
+        ui.label(format!("Zoom: {:.2}", self.shell.pdf_mode.session.viewport.zoom));
         ui.label(format!(
             "Text source: {:?}",
-            self.shell.pdf.reading_support.text_source
+            self.shell.pdf_mode.session.reading_support.text_source
         ));
         ui.label(format!(
             "Reading reliability: {:?}",
-            self.shell.pdf.reading_support.reliability
+            self.shell.pdf_mode.session.reading_support.reliability
         ));
-        ui.label(format!("Tool: {:?}", self.shell.annotation_tools.current_tool));
-        ui.label(format!("PDF annotations: {}", self.shell.pdf.annotations.len()));
+        ui.label(format!(
+            "Tool: {:?}",
+            self.shell.shared_ui.annotation_tools.current_tool
+        ));
+        ui.label(format!(
+            "PDF annotations: {}",
+            self.shell.pdf_mode.session.annotations.len()
+        ));
     }
 
     fn render_annotation_toolbar(&mut self, ui: &mut egui::Ui, mode: WorkspaceMode) {
@@ -125,12 +139,12 @@ impl RpdfApp {
             ui.horizontal(|ui| {
                 ui.label("Annotation tool:");
                 ui.selectable_value(
-                    &mut self.shell.annotation_tools.current_tool,
+                    &mut self.shell.shared_ui.annotation_tools.current_tool,
                     AnnotationTool::Ink,
                     "Ink",
                 );
                 ui.selectable_value(
-                    &mut self.shell.annotation_tools.current_tool,
+                    &mut self.shell.shared_ui.annotation_tools.current_tool,
                     AnnotationTool::Highlighter,
                     "Highlighter",
                 );
@@ -138,7 +152,7 @@ impl RpdfApp {
 
             ui.horizontal(|ui| {
                 ui.label("Note:");
-                ui.text_edit_singleline(&mut self.shell.annotation_tools.pending_note_text);
+                ui.text_edit_singleline(&mut self.shell.shared_ui.annotation_tools.pending_note_text);
                 if ui.button("Add note").clicked() {
                     match mode {
                         WorkspaceMode::InfiniteCanvas => self.add_canvas_note(),
@@ -170,24 +184,55 @@ impl Default for StartupState {
 #[derive(Debug, Clone)]
 pub struct ShellState {
     pub mode: WorkspaceMode,
-    pub canvas: CanvasDocument,
-    pub canvas_interaction: CanvasInteractionState,
-    pub annotation_tools: AnnotationToolState,
-    pub pdf: PdfDocumentSession,
-    pub pdf_interaction: PdfInteractionState,
+    pub canvas_mode: CanvasModeState,
+    pub pdf_mode: PdfModeState,
+    pub shared_ui: SharedUiState,
 }
 
 impl Default for ShellState {
     fn default() -> Self {
         Self {
             mode: WorkspaceMode::InfiniteCanvas,
-            canvas: default_canvas_document(),
-            canvas_interaction: CanvasInteractionState::default(),
-            annotation_tools: AnnotationToolState::default(),
-            pdf: default_pdf_session(),
-            pdf_interaction: PdfInteractionState::default(),
+            canvas_mode: CanvasModeState::default(),
+            pdf_mode: PdfModeState::default(),
+            shared_ui: SharedUiState::default(),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct CanvasModeState {
+    pub document: CanvasDocument,
+    pub ui: CanvasInteractionState,
+}
+
+impl Default for CanvasModeState {
+    fn default() -> Self {
+        Self {
+            document: default_canvas_document(),
+            ui: CanvasInteractionState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PdfModeState {
+    pub session: PdfDocumentSession,
+    pub ui: PdfInteractionState,
+}
+
+impl Default for PdfModeState {
+    fn default() -> Self {
+        Self {
+            session: default_pdf_session(),
+            ui: PdfInteractionState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SharedUiState {
+    pub annotation_tools: AnnotationToolState,
 }
 
 #[derive(Debug, Clone, Default)]

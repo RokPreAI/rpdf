@@ -2,17 +2,17 @@
 
 ## Current TODOs
 
-- [ ] 1 Ui extract-mode-shells-and-shared-ui-state
+- [ ] 1 Services formalize-reading-and-export-services
 
 ## Active TODOs
 
-- [ ] 1 Services formalize-reading-and-export-services
 - [ ] 2 Ocr add-text-fallback-and-warning-flow
 - [ ] 2 Persistence add-save-load-and-recovery
 - [ ] 3 Validation add-offline-acceptance-checks
 
 ## Done TODOs
 
+- [x] 1 Ui extract-mode-shells-and-shared-ui-state
 - [x] 0 Architecture refactor-app-into-modules
 - [x] 3 Tts add-pdf-tts-and-highlight-modes
 - [x] 3 Recolor add-pdf-recolor-and-annotation-visibility
@@ -58,7 +58,7 @@ This is a structure-first task, not a user-visible feature expansion. Prefer mov
 
 Priority: 1
 Area: Ui
-Status: current
+Status: done
 Depends on: refactor-app-into-modules
 
 Goal:
@@ -86,7 +86,7 @@ Do not force all behavior into shared abstractions. Duplication is acceptable wh
 
 Priority: 1
 Area: Services
-Status: pending
+Status: current
 Depends on: refactor-app-into-modules
 
 Goal:
