@@ -26,6 +26,12 @@ For the latest UX-hardening findings and the remaining manual-only live-session 
 
 - [STUDY_SESSION_VALIDATION.md](/home/rok/sync/ideas/rpdf/STUDY_SESSION_VALIDATION.md:1)
 
+For a reproducible local manual-run entrypoint that generates a session record, use:
+
+```bash
+./scripts/run_study_session_checklist.sh <readable-pdf> <weak-pdf> <image>
+```
+
 ## Required Manual Assets
 
 Use local offline assets for the manual checks below.

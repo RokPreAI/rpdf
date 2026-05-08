@@ -150,12 +150,13 @@ Use the existing acceptance assets:
 
 Recommended local validation order:
 
-1. Run `cargo run` in a graphical session.
-2. In PDF Mode, open the readable PDF and confirm native text guidance is clear before starting TTS.
-3. Open the weak/scanned PDF and confirm OCR fallback and warning banners remain honest.
-4. In Canvas Mode, create a mixed-content board and confirm the grouped tool sections reduce navigation friction.
-5. Attempt SVG export with both compatible and incompatible selections.
-6. Leave unsaved changes idle long enough for autosave, then confirm the new autosave banner and recovery path are understandable.
+1. Run `./scripts/run_study_session_checklist.sh <readable-pdf> <weak-pdf> <image>` to create the local session record and rerun the automated baseline.
+2. Run `cargo run` in a graphical session.
+3. In PDF Mode, open the readable PDF and confirm native text guidance is clear before starting TTS.
+4. Open the weak/scanned PDF and confirm OCR fallback and warning banners remain honest.
+5. In Canvas Mode, create a mixed-content board and confirm the grouped tool sections reduce navigation friction.
+6. Attempt SVG export with both compatible and incompatible selections.
+7. Leave unsaved changes idle long enough for autosave, then confirm the new autosave banner and recovery path are understandable.
 
 ## Outcome
 
