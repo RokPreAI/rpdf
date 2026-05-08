@@ -2,6 +2,12 @@
 
 This directory stores generated markdown records for local manual `rpdf` study-session runs.
 
+Default git behavior:
+
+- generated `study_sessions/*.md` files are ignored by `.gitignore`
+- `README.md` stays tracked
+- if a specific session record contains durable project findings, it can still be committed deliberately with `git add -f`
+
 Use:
 
 ```bash

@@ -120,5 +120,8 @@ EOF
 echo
 echo "Manual study-session record created:"
 echo "  $session_record_path"
+if [[ "$session_record_path" == "$session_dir/"* ]]; then
+  echo "  Note: study_sessions/*.md outputs are gitignored by default."
+fi
 echo
 echo "$launch_hint"

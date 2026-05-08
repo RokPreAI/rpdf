@@ -1,1 +1,3 @@
 /target/
+/study_sessions/*.md
+!/study_sessions/README.md
