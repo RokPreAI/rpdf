@@ -67,6 +67,26 @@ impl RpdfApp {
                 }
             });
 
+            ui.horizontal(|ui| {
+                ui.label("Save path:");
+                ui.text_edit_singleline(&mut self.shell.pdf_mode.ui.document_path);
+                if ui.button("Save session").clicked() {
+                    self.save_pdf_session();
+                }
+                if ui.button("Load session").clicked() {
+                    self.load_pdf_session();
+                }
+                if ui
+                    .add_enabled(
+                        self.services.persistence.has_pdf_recovery_snapshot(),
+                        egui::Button::new("Recover autosave"),
+                    )
+                    .clicked()
+                {
+                    self.recover_pdf_session();
+                }
+            });
+
             if !self.shell.pdf_mode.ui.status_message.is_empty() {
                 ui.label(&self.shell.pdf_mode.ui.status_message);
             }
@@ -91,6 +111,7 @@ impl RpdfApp {
                     self.shell.pdf_mode.session.viewport.page_index = display_page
                         .saturating_sub(1)
                         .min(self.shell.pdf_mode.ui.page_count.saturating_sub(1));
+                    self.mark_pdf_dirty();
                 }
 
                 ui.label(format!("of {}", self.shell.pdf_mode.ui.page_count));
@@ -117,8 +138,10 @@ impl RpdfApp {
                 } else {
                     self.shell.pdf_mode.session.view.recolor.current_profile = None;
                 }
+                self.mark_pdf_dirty();
             }
 
+            let mut recolor_profile_changed = false;
             if let Some(profile) = self
                 .shell
                 .pdf_mode
@@ -133,28 +156,40 @@ impl RpdfApp {
                     let mut foreground = to_color32(profile.foreground);
                     if ui.color_edit_button_srgba(&mut foreground).changed() {
                         profile.foreground = from_color32(foreground);
+                        recolor_profile_changed = true;
                     }
 
                     ui.label("Background");
                     let mut background = to_color32(profile.background);
                     if ui.color_edit_button_srgba(&mut background).changed() {
                         profile.background = from_color32(background);
+                        recolor_profile_changed = true;
                     }
                 });
+            }
+            if recolor_profile_changed {
+                self.mark_pdf_dirty();
             }
 
             ui.horizontal(|ui| {
                 ui.label("PDF export recolor:");
-                ui.selectable_value(
-                    &mut self.shell.pdf_mode.session.view.recolor.export_mode,
-                    RecolorExportMode::PreserveOriginalAppearance,
-                    "Preserve original",
-                );
-                ui.selectable_value(
-                    &mut self.shell.pdf_mode.session.view.recolor.export_mode,
-                    RecolorExportMode::IncludeCurrentRecoloring,
-                    "Include recolor",
-                );
+                let preserve_changed = ui
+                    .selectable_value(
+                        &mut self.shell.pdf_mode.session.view.recolor.export_mode,
+                        RecolorExportMode::PreserveOriginalAppearance,
+                        "Preserve original",
+                    )
+                    .changed();
+                let recolor_changed = ui
+                    .selectable_value(
+                        &mut self.shell.pdf_mode.session.view.recolor.export_mode,
+                        RecolorExportMode::IncludeCurrentRecoloring,
+                        "Include recolor",
+                    )
+                    .changed();
+                if preserve_changed || recolor_changed {
+                    self.mark_pdf_dirty();
+                }
             });
 
             ui.collapsing("Annotation palettes", |ui| {
@@ -284,6 +319,7 @@ impl RpdfApp {
                     },
                 },
             ));
+        self.mark_pdf_dirty();
     }
 
     fn paint_pdf_annotations(&self, painter: &egui::Painter, page_rect: egui::Rect) {
@@ -385,6 +421,7 @@ impl RpdfApp {
             .reading_support
             .best_effort_pdf_page_count(&path)
             .max(1);
+        self.shell.pdf_mode.ui.document_path = path.clone();
         self.stop_pdf_tts();
         self.shell.pdf_mode.session.reading_support.text_source = TextSupportSource::Unavailable;
         self.shell.pdf_mode.session.reading_support.reliability = ReadingReliability::BestEffort;
@@ -394,6 +431,7 @@ impl RpdfApp {
                 message: "PDF opened. Start TTS to evaluate native text and OCR fallback."
                     .to_string(),
             });
+        self.mark_pdf_dirty();
         self.startup.last_opened_path = Some(path);
         self.shell.pdf_mode.ui.status_message = "Opened PDF document.".to_string();
     }
@@ -402,6 +440,7 @@ impl RpdfApp {
         let current = self.shell.pdf_mode.session.viewport.page_index as isize;
         let max = self.shell.pdf_mode.ui.page_count.saturating_sub(1) as isize;
         self.shell.pdf_mode.session.viewport.page_index = (current + delta).clamp(0, max) as usize;
+        self.mark_pdf_dirty();
     }
 
     pub(super) fn add_pdf_note(&mut self) {
@@ -434,6 +473,7 @@ impl RpdfApp {
                 text: note,
                 style: note_text_style(),
             }));
+        self.mark_pdf_dirty();
         self.shell
             .shared_ui
             .annotation_tools
@@ -605,5 +645,90 @@ impl RpdfApp {
             egui::FontId::proportional(16.0),
             egui::Color32::BLACK,
         );
+    }
+
+    fn save_pdf_session(&mut self) {
+        let path = self.shell.pdf_mode.ui.document_path.trim().to_string();
+        if path.is_empty() {
+            self.shell.pdf_mode.ui.status_message =
+                "PDF session save needs a target file path.".to_string();
+            return;
+        }
+
+        match self
+            .services
+            .persistence
+            .save_pdf_session(&path, &self.shell.pdf_mode.session)
+        {
+            Ok(()) => {
+                self.shell.pdf_mode.session.autosave.dirty = false;
+                self.shell.pdf_mode.ui.status_message = format!("Saved PDF session to {path}");
+            }
+            Err(error) => {
+                self.shell.pdf_mode.ui.status_message = format!("PDF session save failed: {error}");
+            }
+        }
+    }
+
+    fn load_pdf_session(&mut self) {
+        let path = self.shell.pdf_mode.ui.document_path.trim().to_string();
+        if path.is_empty() {
+            self.shell.pdf_mode.ui.status_message =
+                "PDF session load needs a source file path.".to_string();
+            return;
+        }
+
+        match self.services.persistence.load_pdf_session(&path) {
+            Ok(session) => {
+                self.shell.pdf_mode.ui.pending_open_path = match &session.source {
+                    PdfSource::FilePath(path) => path.display().to_string(),
+                };
+                self.shell.pdf_mode.ui.page_count = match &session.source {
+                    PdfSource::FilePath(path) if path.exists() => self
+                        .services
+                        .reading_support
+                        .best_effort_pdf_page_count(&path.display().to_string())
+                        .max(1),
+                    _ => 1,
+                };
+                self.shell.pdf_mode.session = session;
+                self.shell.pdf_mode.ui.active_stroke = None;
+                self.shell.pdf_mode.ui.reading_session = None;
+                self.shell.pdf_mode.ui.status_message = format!("Loaded PDF session from {path}");
+            }
+            Err(error) => {
+                self.shell.pdf_mode.ui.status_message = format!("PDF session load failed: {error}");
+            }
+        }
+    }
+
+    fn recover_pdf_session(&mut self) {
+        match self.services.persistence.recover_pdf_session() {
+            Ok(Some(session)) => {
+                self.shell.pdf_mode.ui.pending_open_path = match &session.source {
+                    PdfSource::FilePath(path) => path.display().to_string(),
+                };
+                self.shell.pdf_mode.ui.page_count = match &session.source {
+                    PdfSource::FilePath(path) if path.exists() => self
+                        .services
+                        .reading_support
+                        .best_effort_pdf_page_count(&path.display().to_string())
+                        .max(1),
+                    _ => 1,
+                };
+                self.shell.pdf_mode.session = session;
+                self.shell.pdf_mode.ui.active_stroke = None;
+                self.shell.pdf_mode.ui.reading_session = None;
+                self.shell.pdf_mode.ui.status_message =
+                    "Recovered latest PDF autosave snapshot.".to_string();
+            }
+            Ok(None) => {
+                self.shell.pdf_mode.ui.status_message =
+                    "No PDF autosave snapshot was found.".to_string();
+            }
+            Err(error) => {
+                self.shell.pdf_mode.ui.status_message = format!("PDF recovery failed: {error}");
+            }
+        }
     }
 }

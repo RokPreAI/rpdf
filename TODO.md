@@ -2,15 +2,15 @@
 
 ## Current TODOs
 
-- [ ] 1 Persistence add-save-load-and-recovery
+- [ ] 2 Validation add-offline-acceptance-checks
 
 ## Active TODOs
 
-- [ ] 2 Validation add-offline-acceptance-checks
 - [ ] 3 Ux run-study-session-ux-hardening
 
 ## Done TODOs
 
+- [x] 1 Persistence add-save-load-and-recovery
 - [x] 0 Ocr add-text-fallback-and-warning-flow
 - [x] 1 Services formalize-reading-and-export-services
 - [x] 1 Ui extract-mode-shells-and-shared-ui-state
@@ -400,7 +400,7 @@ This task should focus on correctness of fallback behavior, not perfection of OC
 
 Priority: 1
 Area: Persistence
-Status: current
+Status: done
 Depends on: define-document-models, add-pdf-and-canvas-annotation-tools, refactor-app-into-modules
 
 Goal:
@@ -430,7 +430,7 @@ Do not let recovery-only storage become the only way users retain their work. Pr
 
 Priority: 2
 Area: Validation
-Status: pending
+Status: current
 Depends on: refactor-app-into-modules, extract-mode-shells-and-shared-ui-state, formalize-reading-and-export-services, add-text-fallback-and-warning-flow, add-save-load-and-recovery
 
 Goal:

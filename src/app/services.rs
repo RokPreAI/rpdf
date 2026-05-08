@@ -1,8 +1,9 @@
 use super::util;
 use crate::model::{
-    CanvasItem, HighlightMode, IncompatibleExportReason, ReadingReliability, SvgCompatibility,
-    TextSupportSource, UserVisibleWarning, WarningCode,
+    CanvasDocument, CanvasItem, HighlightMode, IncompatibleExportReason, PdfDocumentSession,
+    ReadingReliability, SvgCompatibility, TextSupportSource, UserVisibleWarning, WarningCode,
 };
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -11,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct AppServices {
     pub reading_support: ReadingSupportService,
     pub canvas_export: CanvasExportService,
+    pub persistence: PersistenceService,
 }
 
 #[derive(Debug, Default)]
@@ -158,6 +160,9 @@ impl ReadingSupportService {
 #[derive(Debug, Default)]
 pub struct CanvasExportService;
 
+#[derive(Debug, Default)]
+pub struct PersistenceService;
+
 impl CanvasExportService {
     pub fn first_incompatibility(&self, items: &[&CanvasItem]) -> Option<IncompatibleExportReason> {
         items
@@ -174,6 +179,140 @@ impl CanvasExportService {
 
     pub fn write_svg_document(&self, export_path: &str, svg: String) -> Result<(), String> {
         std::fs::write(export_path, svg).map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CanvasSaveFile {
+    schema_version: u32,
+    saved_unix_ms: u64,
+    document: CanvasDocument,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PdfSaveFile {
+    schema_version: u32,
+    saved_unix_ms: u64,
+    session: PdfDocumentSession,
+}
+
+impl PersistenceService {
+    pub fn save_canvas_document(
+        &self,
+        export_path: &str,
+        document: &CanvasDocument,
+    ) -> Result<(), String> {
+        let mut saved_document = document.clone();
+        saved_document.autosave.dirty = false;
+        self.write_json_file(
+            export_path,
+            &CanvasSaveFile {
+                schema_version: 1,
+                saved_unix_ms: current_unix_ms(),
+                document: saved_document,
+            },
+        )
+    }
+
+    pub fn load_canvas_document(&self, path: &str) -> Result<CanvasDocument, String> {
+        let mut save_file: CanvasSaveFile = self.read_json_file(path)?;
+        if save_file.schema_version != 1 {
+            return Err(format!(
+                "Unsupported canvas save schema version: {}",
+                save_file.schema_version
+            ));
+        }
+        save_file.document.autosave.dirty = false;
+        Ok(save_file.document)
+    }
+
+    pub fn save_pdf_session(
+        &self,
+        export_path: &str,
+        session: &PdfDocumentSession,
+    ) -> Result<(), String> {
+        let mut saved_session = session.clone();
+        saved_session.autosave.dirty = false;
+        self.write_json_file(
+            export_path,
+            &PdfSaveFile {
+                schema_version: 1,
+                saved_unix_ms: current_unix_ms(),
+                session: saved_session,
+            },
+        )
+    }
+
+    pub fn load_pdf_session(&self, path: &str) -> Result<PdfDocumentSession, String> {
+        let mut save_file: PdfSaveFile = self.read_json_file(path)?;
+        if save_file.schema_version != 1 {
+            return Err(format!(
+                "Unsupported PDF save schema version: {}",
+                save_file.schema_version
+            ));
+        }
+        save_file.session.autosave.dirty = false;
+        Ok(save_file.session)
+    }
+
+    pub fn write_canvas_recovery_snapshot(
+        &self,
+        document: &CanvasDocument,
+    ) -> Result<String, String> {
+        let path = self.recovery_path("canvas-recovery.json");
+        self.save_canvas_document(&path, document)?;
+        Ok(path)
+    }
+
+    pub fn write_pdf_recovery_snapshot(
+        &self,
+        session: &PdfDocumentSession,
+    ) -> Result<String, String> {
+        let path = self.recovery_path("pdf-recovery.json");
+        self.save_pdf_session(&path, session)?;
+        Ok(path)
+    }
+
+    pub fn has_canvas_recovery_snapshot(&self) -> bool {
+        std::path::Path::new(&self.recovery_path("canvas-recovery.json")).exists()
+    }
+
+    pub fn has_pdf_recovery_snapshot(&self) -> bool {
+        std::path::Path::new(&self.recovery_path("pdf-recovery.json")).exists()
+    }
+
+    pub fn recover_canvas_document(&self) -> Result<Option<CanvasDocument>, String> {
+        let path = self.recovery_path("canvas-recovery.json");
+        if !std::path::Path::new(&path).exists() {
+            return Ok(None);
+        }
+        self.load_canvas_document(&path).map(Some)
+    }
+
+    pub fn recover_pdf_session(&self) -> Result<Option<PdfDocumentSession>, String> {
+        let path = self.recovery_path("pdf-recovery.json");
+        if !std::path::Path::new(&path).exists() {
+            return Ok(None);
+        }
+        self.load_pdf_session(&path).map(Some)
+    }
+
+    fn write_json_file<T: Serialize>(&self, path: &str, value: &T) -> Result<(), String> {
+        let output_path = PathBuf::from(path);
+        if let Some(parent) = output_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        let serialized = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
+        std::fs::write(output_path, serialized).map_err(|error| error.to_string())
+    }
+
+    fn read_json_file<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, String> {
+        let content = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+        serde_json::from_str(&content).map_err(|error| error.to_string())
+    }
+
+    fn recovery_path(&self, file_name: &str) -> String {
+        recovery_root().join(file_name).display().to_string()
     }
 }
 
@@ -239,9 +378,40 @@ fn create_ocr_temp_dir() -> Result<PathBuf, std::io::Error> {
     Ok(path)
 }
 
+fn recovery_root() -> PathBuf {
+    if let Ok(state_home) = std::env::var("XDG_STATE_HOME") {
+        return PathBuf::from(state_home).join("rpdf").join("recovery");
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home)
+            .join(".local")
+            .join("state")
+            .join("rpdf")
+            .join("recovery");
+    }
+    std::env::temp_dir().join("rpdf").join("recovery")
+}
+
+fn current_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{TextQuality, native_text_quality, normalize_extracted_text};
+    use super::{
+        PersistenceService, TextQuality, current_unix_ms, native_text_quality,
+        normalize_extracted_text,
+    };
+    use crate::model::{
+        AnnotationAppearanceSet, AnnotationVisibility, AutosaveState, BackgroundPattern,
+        BackgroundPatternStyle, CanvasDocument, DocumentMetadata, HighlightMode,
+        PdfDocumentSession, PdfSource, PdfViewState, PdfViewportState, PlaybackState, Point,
+        ReadingReliability, ReadingSupportState, RecolorExportMode, RecolorState, RgbaColor,
+        SelectionTarget, TextSupportSource, TtsState, ViewportState, WarningCode,
+    };
 
     #[test]
     fn normalizes_whitespace_for_quality_checks() {
@@ -266,5 +436,151 @@ mod tests {
     fn marks_garbled_long_token_text_as_weak() {
         let text = "AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP syntheticcontentwithoutspaces repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken";
         assert_eq!(native_text_quality(text), TextQuality::Weak);
+    }
+
+    #[test]
+    fn round_trips_canvas_save_files() {
+        let service = PersistenceService;
+        let path = unique_test_path("canvas-save.json");
+        let document = sample_canvas_document();
+
+        service
+            .save_canvas_document(&path, &document)
+            .expect("save canvas document");
+        let loaded = service
+            .load_canvas_document(&path)
+            .expect("load canvas document");
+
+        assert_eq!(loaded.metadata.document_id, document.metadata.document_id);
+        assert_eq!(loaded.background, document.background);
+        assert!(!loaded.autosave.dirty);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn round_trips_pdf_save_files() {
+        let service = PersistenceService;
+        let path = unique_test_path("pdf-save.json");
+        let session = sample_pdf_session();
+
+        service
+            .save_pdf_session(&path, &session)
+            .expect("save pdf session");
+        let loaded = service.load_pdf_session(&path).expect("load pdf session");
+
+        assert_eq!(loaded.metadata.document_id, session.metadata.document_id);
+        assert_eq!(loaded.source, session.source);
+        assert!(!loaded.autosave.dirty);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    fn unique_test_path(name: &str) -> String {
+        std::env::temp_dir()
+            .join(format!("rpdf-test-{}-{}", current_unix_ms(), name))
+            .display()
+            .to_string()
+    }
+
+    fn sample_canvas_document() -> CanvasDocument {
+        CanvasDocument {
+            metadata: DocumentMetadata {
+                document_id: "canvas-test".to_string(),
+                title: Some("Canvas".to_string()),
+                created_unix_ms: 1,
+                modified_unix_ms: 2,
+            },
+            viewport: ViewportState {
+                origin: Point { x: 10.0, y: 20.0 },
+                zoom: 1.2,
+            },
+            background: BackgroundPattern::Dots(BackgroundPatternStyle {
+                spacing: 24.0,
+                line_width: 1.0,
+                color: RgbaColor {
+                    red: 1,
+                    green: 2,
+                    blue: 3,
+                    alpha: 255,
+                },
+            }),
+            items: Vec::new(),
+            selection: SelectionTarget::WholeCanvas,
+            autosave: AutosaveState {
+                recovery_snapshot_id: Some("snapshot".to_string()),
+                dirty: true,
+            },
+        }
+    }
+
+    fn sample_pdf_session() -> PdfDocumentSession {
+        PdfDocumentSession {
+            metadata: DocumentMetadata {
+                document_id: "pdf-test".to_string(),
+                title: Some("PDF".to_string()),
+                created_unix_ms: 1,
+                modified_unix_ms: 2,
+            },
+            source: PdfSource::FilePath("/tmp/sample.pdf".into()),
+            viewport: PdfViewportState {
+                page_index: 2,
+                scroll_offset: Point { x: 4.0, y: 8.0 },
+                zoom: 1.0,
+            },
+            annotations: Vec::new(),
+            reading_support: ReadingSupportState {
+                tts: TtsState {
+                    playback: PlaybackState::Stopped,
+                    active_span: None,
+                },
+                highlight_mode: HighlightMode::Line,
+                text_source: TextSupportSource::Unavailable,
+                reliability: ReadingReliability::BestEffort,
+                warning: Some(crate::model::UserVisibleWarning {
+                    code: WarningCode::ReadingSupportUnavailable,
+                    message: "missing text".to_string(),
+                }),
+            },
+            view: PdfViewState {
+                recolor: RecolorState {
+                    current_profile: None,
+                    export_mode: RecolorExportMode::PreserveOriginalAppearance,
+                },
+                annotation_visibility: AnnotationVisibility {
+                    normal_view: sample_palette(),
+                    recolored_view: sample_palette(),
+                },
+            },
+            autosave: AutosaveState {
+                recovery_snapshot_id: Some("snapshot".to_string()),
+                dirty: true,
+            },
+        }
+    }
+
+    fn sample_palette() -> crate::model::AnnotationPalette {
+        crate::model::AnnotationPalette {
+            ink_color: sample_appearance().normal_view,
+            highlighter_color: sample_appearance().normal_view,
+            text_color: sample_appearance().normal_view,
+        }
+    }
+
+    fn sample_appearance() -> AnnotationAppearanceSet {
+        AnnotationAppearanceSet {
+            normal_view: RgbaColor {
+                red: 10,
+                green: 20,
+                blue: 30,
+                alpha: 255,
+            },
+            recolored_view: RgbaColor {
+                red: 40,
+                green: 50,
+                blue: 60,
+                alpha: 255,
+            },
+        }
     }
 }

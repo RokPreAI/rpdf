@@ -54,6 +54,7 @@ impl RpdfApp {
                 {
                     self.shell.canvas_mode.document.background =
                         BackgroundPattern::Dots(default_background_style());
+                    self.mark_canvas_dirty();
                 }
                 if ui
                     .selectable_label(
@@ -67,6 +68,7 @@ impl RpdfApp {
                 {
                     self.shell.canvas_mode.document.background =
                         BackgroundPattern::Lines(default_background_style());
+                    self.mark_canvas_dirty();
                 }
                 if ui
                     .selectable_label(
@@ -80,6 +82,7 @@ impl RpdfApp {
                 {
                     self.shell.canvas_mode.document.background =
                         BackgroundPattern::Squares(default_background_style());
+                    self.mark_canvas_dirty();
                 }
             });
 
@@ -92,6 +95,29 @@ impl RpdfApp {
                     self.add_canvas_text();
                 }
             });
+
+            ui.horizontal(|ui| {
+                ui.label("Save path:");
+                ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.document_path);
+                if ui.button("Save canvas").clicked() {
+                    self.save_canvas_document();
+                }
+                if ui.button("Load canvas").clicked() {
+                    self.load_canvas_document();
+                }
+                if ui
+                    .add_enabled(
+                        self.services.persistence.has_canvas_recovery_snapshot(),
+                        egui::Button::new("Recover autosave"),
+                    )
+                    .clicked()
+                {
+                    self.recover_canvas_document();
+                }
+            });
+            if !self.shell.canvas_mode.ui.save_status.is_empty() {
+                ui.label(&self.shell.canvas_mode.ui.save_status);
+            }
 
             ui.horizontal(|ui| {
                 ui.label("Image path:");
@@ -121,7 +147,8 @@ impl RpdfApp {
                     self.shell.canvas_mode.document.selection = SelectionTarget::WholeCanvas;
                 }
                 if ui.button("Clear item selection").clicked() {
-                    self.shell.canvas_mode.document.selection = SelectionTarget::ItemIds(Vec::new());
+                    self.shell.canvas_mode.document.selection =
+                        SelectionTarget::ItemIds(Vec::new());
                 }
             });
 
@@ -135,7 +162,10 @@ impl RpdfApp {
                 let item_id = canvas_item_id(item).to_string();
                 let mut selected = selected_ids.iter().any(|id| id == &item_id);
                 if ui
-                    .checkbox(&mut selected, format!("{} ({})", item_id, item_kind_label(item)))
+                    .checkbox(
+                        &mut selected,
+                        format!("{} ({})", item_id, item_kind_label(item)),
+                    )
                     .changed()
                 {
                     if selected {
@@ -274,7 +304,7 @@ impl RpdfApp {
                 },
                 layer_role: AnnotationLayerRole::CanvasMarkup,
             }));
-        self.shell.canvas_mode.document.autosave.dirty = true;
+        self.mark_canvas_dirty();
     }
 
     fn paint_workspace_surface(&self, painter: &egui::Painter, rect: egui::Rect) {
@@ -317,7 +347,10 @@ impl RpdfApp {
                 let mut y = workspace.top();
                 while y <= workspace.bottom() {
                     painter.line_segment(
-                        [egui::pos2(workspace.left(), y), egui::pos2(workspace.right(), y)],
+                        [
+                            egui::pos2(workspace.left(), y),
+                            egui::pos2(workspace.right(), y),
+                        ],
                         egui::Stroke::new(style.line_width, color),
                     );
                     y += spacing;
@@ -327,7 +360,10 @@ impl RpdfApp {
                 let mut x = workspace.left();
                 while x <= workspace.right() {
                     painter.line_segment(
-                        [egui::pos2(x, workspace.top()), egui::pos2(x, workspace.bottom())],
+                        [
+                            egui::pos2(x, workspace.top()),
+                            egui::pos2(x, workspace.bottom()),
+                        ],
                         egui::Stroke::new(style.line_width, color),
                     );
                     x += spacing;
@@ -336,7 +372,10 @@ impl RpdfApp {
                 let mut y = workspace.top();
                 while y <= workspace.bottom() {
                     painter.line_segment(
-                        [egui::pos2(workspace.left(), y), egui::pos2(workspace.right(), y)],
+                        [
+                            egui::pos2(workspace.left(), y),
+                            egui::pos2(workspace.right(), y),
+                        ],
                         egui::Stroke::new(style.line_width, color),
                     );
                     y += spacing;
@@ -350,7 +389,9 @@ impl RpdfApp {
         for item in &self.shell.canvas_mode.document.items {
             match item {
                 CanvasItem::ImportedImage(image) => self.paint_imported_image(painter, rect, image),
-                CanvasItem::ImportedPdfPage(page) => self.paint_imported_pdf_page(painter, rect, page),
+                CanvasItem::ImportedPdfPage(page) => {
+                    self.paint_imported_pdf_page(painter, rect, page)
+                }
                 _ => {}
             }
         }
@@ -368,7 +409,13 @@ impl RpdfApp {
                 &text.text,
                 egui::FontId::proportional(
                     text.style.font_size
-                        * self.shell.canvas_mode.document.viewport.zoom.clamp(0.7, 1.4),
+                        * self
+                            .shell
+                            .canvas_mode
+                            .document
+                            .viewport
+                            .zoom
+                            .clamp(0.7, 1.4),
                 ),
                 to_color32(text.style.color.normal_view),
             );
@@ -546,41 +593,51 @@ impl RpdfApp {
         }
 
         let item_id = self.next_canvas_item_id();
-        self.shell.canvas_mode.document.items.push(CanvasItem::Text(TextItem {
-            item_id: format!("text-{item_id}"),
-            bounds: Rect {
-                origin: self.shell.canvas_mode.document.viewport.origin,
-                size: Size {
-                    width: 320.0,
-                    height: 80.0,
-                },
-            },
-            text,
-            style: TextStyle {
-                font_family: "Proportional".to_string(),
-                font_size: 24.0,
-                color: AnnotationAppearanceSet {
-                    normal_view: RgbaColor {
-                        red: 240,
-                        green: 240,
-                        blue: 240,
-                        alpha: 255,
-                    },
-                    recolored_view: RgbaColor {
-                        red: 240,
-                        green: 240,
-                        blue: 240,
-                        alpha: 255,
+        self.shell
+            .canvas_mode
+            .document
+            .items
+            .push(CanvasItem::Text(TextItem {
+                item_id: format!("text-{item_id}"),
+                bounds: Rect {
+                    origin: self.shell.canvas_mode.document.viewport.origin,
+                    size: Size {
+                        width: 320.0,
+                        height: 80.0,
                     },
                 },
-            },
-        }));
-        self.shell.canvas_mode.document.autosave.dirty = true;
+                text,
+                style: TextStyle {
+                    font_family: "Proportional".to_string(),
+                    font_size: 24.0,
+                    color: AnnotationAppearanceSet {
+                        normal_view: RgbaColor {
+                            red: 240,
+                            green: 240,
+                            blue: 240,
+                            alpha: 255,
+                        },
+                        recolored_view: RgbaColor {
+                            red: 240,
+                            green: 240,
+                            blue: 240,
+                            alpha: 255,
+                        },
+                    },
+                },
+            }));
+        self.mark_canvas_dirty();
         self.shell.canvas_mode.ui.pending_text.clear();
     }
 
     fn import_canvas_image(&mut self) {
-        let path = self.shell.canvas_mode.ui.pending_image_path.trim().to_string();
+        let path = self
+            .shell
+            .canvas_mode
+            .ui
+            .pending_image_path
+            .trim()
+            .to_string();
         if path.is_empty() {
             return;
         }
@@ -598,16 +655,23 @@ impl RpdfApp {
                 item_id: format!("image-{item_id}"),
                 source: ImportedAssetSource::FilePath(path.clone().into()),
                 bounds: Rect {
-                    origin: self.shifted_canvas_origin(60.0 * item_id as f32, 40.0 * item_id as f32),
+                    origin: self
+                        .shifted_canvas_origin(60.0 * item_id as f32, 40.0 * item_id as f32),
                     size,
                 },
             }));
-        self.shell.canvas_mode.document.autosave.dirty = true;
+        self.mark_canvas_dirty();
         self.shell.canvas_mode.ui.pending_image_path.clear();
     }
 
     fn import_canvas_pdf_page(&mut self) {
-        let path = self.shell.canvas_mode.ui.pending_pdf_path.trim().to_string();
+        let path = self
+            .shell
+            .canvas_mode
+            .ui
+            .pending_pdf_path
+            .trim()
+            .to_string();
         if path.is_empty() {
             return;
         }
@@ -622,7 +686,8 @@ impl RpdfApp {
                 source: PdfSource::FilePath(path.clone().into()),
                 page_index: self.shell.canvas_mode.ui.pending_pdf_page.saturating_sub(1),
                 bounds: Rect {
-                    origin: self.shifted_canvas_origin(80.0 * item_id as f32, 48.0 * item_id as f32),
+                    origin: self
+                        .shifted_canvas_origin(80.0 * item_id as f32, 48.0 * item_id as f32),
                     size: Size {
                         width: 420.0,
                         height: 560.0,
@@ -630,7 +695,7 @@ impl RpdfApp {
                 },
                 recolor_override: None,
             }));
-        self.shell.canvas_mode.document.autosave.dirty = true;
+        self.mark_canvas_dirty();
         self.shell.canvas_mode.ui.pending_pdf_path.clear();
     }
 
@@ -660,19 +725,28 @@ impl RpdfApp {
         }
 
         let item_id = self.next_canvas_item_id();
-        self.shell.canvas_mode.document.items.push(CanvasItem::Text(TextItem {
-            item_id: format!("canvas-note-{item_id}"),
-            bounds: Rect {
-                origin: self.shifted_canvas_origin(40.0, 40.0),
-                size: Size {
-                    width: 280.0,
-                    height: 70.0,
+        self.shell
+            .canvas_mode
+            .document
+            .items
+            .push(CanvasItem::Text(TextItem {
+                item_id: format!("canvas-note-{item_id}"),
+                bounds: Rect {
+                    origin: self.shifted_canvas_origin(40.0, 40.0),
+                    size: Size {
+                        width: 280.0,
+                        height: 70.0,
+                    },
                 },
-            },
-            text: note,
-            style: note_text_style(),
-        }));
-        self.shell.shared_ui.annotation_tools.pending_note_text.clear();
+                text: note,
+                style: note_text_style(),
+            }));
+        self.mark_canvas_dirty();
+        self.shell
+            .shared_ui
+            .annotation_tools
+            .pending_note_text
+            .clear();
     }
 
     fn apply_recolor_to_selected_canvas_pdf_pages(&mut self, enable: bool) {
@@ -703,6 +777,7 @@ impl RpdfApp {
                 page.recolor_override = enable.then_some(profile.clone());
             }
         }
+        self.mark_canvas_dirty();
     }
 
     fn export_canvas_svg(&mut self) {
@@ -715,7 +790,12 @@ impl RpdfApp {
 
         let selected_items = self.selected_canvas_items();
         let target_items = if selected_items.is_empty() {
-            self.shell.canvas_mode.document.items.iter().collect::<Vec<_>>()
+            self.shell
+                .canvas_mode
+                .document
+                .items
+                .iter()
+                .collect::<Vec<_>>()
         } else {
             selected_items
         };
@@ -736,7 +816,10 @@ impl RpdfApp {
             return;
         }
 
-        let svg = self.services.canvas_export.build_svg_document(&target_items);
+        let svg = self
+            .services
+            .canvas_export
+            .build_svg_document(&target_items);
         match self
             .services
             .canvas_export
@@ -762,6 +845,68 @@ impl RpdfApp {
                 .filter(|item| ids.iter().any(|id| id == canvas_item_id(item)))
                 .collect(),
             _ => Vec::new(),
+        }
+    }
+
+    fn save_canvas_document(&mut self) {
+        let path = self.shell.canvas_mode.ui.document_path.trim().to_string();
+        if path.is_empty() {
+            self.shell.canvas_mode.ui.save_status =
+                "Canvas save needs a target file path.".to_string();
+            return;
+        }
+
+        match self
+            .services
+            .persistence
+            .save_canvas_document(&path, &self.shell.canvas_mode.document)
+        {
+            Ok(()) => {
+                self.shell.canvas_mode.document.autosave.dirty = false;
+                self.shell.canvas_mode.ui.save_status = format!("Saved canvas document to {path}");
+            }
+            Err(error) => {
+                self.shell.canvas_mode.ui.save_status = format!("Canvas save failed: {error}");
+            }
+        }
+    }
+
+    fn load_canvas_document(&mut self) {
+        let path = self.shell.canvas_mode.ui.document_path.trim().to_string();
+        if path.is_empty() {
+            self.shell.canvas_mode.ui.save_status =
+                "Canvas load needs a source file path.".to_string();
+            return;
+        }
+
+        match self.services.persistence.load_canvas_document(&path) {
+            Ok(document) => {
+                self.shell.canvas_mode.document = document;
+                self.shell.canvas_mode.ui.active_stroke = None;
+                self.shell.canvas_mode.ui.save_status =
+                    format!("Loaded canvas document from {path}");
+            }
+            Err(error) => {
+                self.shell.canvas_mode.ui.save_status = format!("Canvas load failed: {error}");
+            }
+        }
+    }
+
+    fn recover_canvas_document(&mut self) {
+        match self.services.persistence.recover_canvas_document() {
+            Ok(Some(document)) => {
+                self.shell.canvas_mode.document = document;
+                self.shell.canvas_mode.ui.active_stroke = None;
+                self.shell.canvas_mode.ui.save_status =
+                    "Recovered latest canvas autosave snapshot.".to_string();
+            }
+            Ok(None) => {
+                self.shell.canvas_mode.ui.save_status =
+                    "No canvas autosave snapshot was found.".to_string();
+            }
+            Err(error) => {
+                self.shell.canvas_mode.ui.save_status = format!("Canvas recovery failed: {error}");
+            }
         }
     }
 }

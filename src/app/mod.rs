@@ -5,19 +5,18 @@ mod util;
 
 use crate::model::{
     AnnotationAppearanceSet, AnnotationLayerRole, AnnotationPalette, AnnotationVisibility,
-    AutosaveState, BackgroundPattern, BackgroundPatternStyle, BrushStyle, CanvasDocument, CanvasItem,
-    DocumentMetadata, HighlightMode, ImportedAssetSource, ImportedImageItem, ImportedPdfPageItem,
-    PdfDocumentSession, PdfPenStrokeAnnotation, PdfSource, PdfTextNote, PdfViewState, PdfViewportState,
-    PenStrokeItem, PenToolKind, PlaybackState, Point, ReadingReliability, ReadingSupportState, Rect,
-    RecolorExportMode, RgbaColor, SelectionTarget, Size, StrokePoint, TextItem, TextStyle,
-    TextSupportSource, TtsState, ViewportState, WarningCode, WorkspaceMode,
+    AutosaveState, BackgroundPattern, BackgroundPatternStyle, BrushStyle, CanvasDocument,
+    CanvasItem, DocumentMetadata, HighlightMode, ImportedAssetSource, ImportedImageItem,
+    ImportedPdfPageItem, PdfDocumentSession, PdfPenStrokeAnnotation, PdfSource, PdfTextNote,
+    PdfViewState, PdfViewportState, PenStrokeItem, PenToolKind, PlaybackState, Point,
+    ReadingReliability, ReadingSupportState, RecolorExportMode, Rect, RgbaColor, SelectionTarget,
+    Size, StrokePoint, TextItem, TextStyle, TextSupportSource, TtsState, ViewportState,
+    WarningCode, WorkspaceMode,
 };
 use eframe::egui;
 use services::AppServices;
-use std::time::Instant;
-use util::{
-    default_palette, muted_grid_color,
-};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use util::{default_palette, muted_grid_color};
 
 pub struct RpdfApp {
     startup: StartupState,
@@ -38,6 +37,7 @@ impl Default for RpdfApp {
 impl eframe::App for RpdfApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.tick_pdf_reading_support();
+        self.tick_autosave();
 
         egui::TopBottomPanel::top("mode_switcher").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -49,11 +49,7 @@ impl eframe::App for RpdfApp {
                     WorkspaceMode::InfiniteCanvas,
                     "Infinite Canvas",
                 );
-                ui.selectable_value(
-                    &mut self.shell.mode,
-                    WorkspaceMode::PdfDocument,
-                    "PDF Mode",
-                );
+                ui.selectable_value(&mut self.shell.mode, WorkspaceMode::PdfDocument, "PDF Mode");
                 ui.separator();
                 ui.label(format!("Offline startup: {}", self.startup.offline_ready));
             });
@@ -87,15 +83,27 @@ impl eframe::App for RpdfApp {
 impl RpdfApp {
     fn render_canvas_summary(&mut self, ui: &mut egui::Ui) {
         ui.heading("Canvas Root");
-        ui.label(format!("Items: {}", self.shell.canvas_mode.document.items.len()));
-        ui.label(format!("Zoom: {:.2}", self.shell.canvas_mode.document.viewport.zoom));
+        ui.label(format!(
+            "Items: {}",
+            self.shell.canvas_mode.document.items.len()
+        ));
+        ui.label(format!(
+            "Zoom: {:.2}",
+            self.shell.canvas_mode.document.viewport.zoom
+        ));
         ui.label(format!(
             "Origin: ({:.0}, {:.0})",
             self.shell.canvas_mode.document.viewport.origin.x,
             self.shell.canvas_mode.document.viewport.origin.y
         ));
-        ui.label(format!("Selection: {:?}", self.shell.canvas_mode.document.selection));
-        ui.label(format!("Dirty: {}", self.shell.canvas_mode.document.autosave.dirty));
+        ui.label(format!(
+            "Selection: {:?}",
+            self.shell.canvas_mode.document.selection
+        ));
+        ui.label(format!(
+            "Dirty: {}",
+            self.shell.canvas_mode.document.autosave.dirty
+        ));
         ui.label(format!(
             "Active stroke points: {}",
             self.shell
@@ -117,9 +125,15 @@ impl RpdfApp {
 
     fn render_pdf_summary(&self, ui: &mut egui::Ui) {
         ui.heading("PDF Root");
-        ui.label(format!("Page: {}", self.shell.pdf_mode.session.viewport.page_index + 1));
+        ui.label(format!(
+            "Page: {}",
+            self.shell.pdf_mode.session.viewport.page_index + 1
+        ));
         ui.label(format!("Page count: {}", self.shell.pdf_mode.ui.page_count));
-        ui.label(format!("Zoom: {:.2}", self.shell.pdf_mode.session.viewport.zoom));
+        ui.label(format!(
+            "Zoom: {:.2}",
+            self.shell.pdf_mode.session.viewport.zoom
+        ));
         ui.label(format!(
             "Text source: {:?}",
             self.shell.pdf_mode.session.reading_support.text_source
@@ -156,7 +170,9 @@ impl RpdfApp {
 
             ui.horizontal(|ui| {
                 ui.label("Note:");
-                ui.text_edit_singleline(&mut self.shell.shared_ui.annotation_tools.pending_note_text);
+                ui.text_edit_singleline(
+                    &mut self.shell.shared_ui.annotation_tools.pending_note_text,
+                );
                 if ui.button("Add note").clicked() {
                     match mode {
                         WorkspaceMode::InfiniteCanvas => self.add_canvas_note(),
@@ -248,8 +264,11 @@ pub struct CanvasInteractionState {
     pub pending_image_path: String,
     pub pending_pdf_path: String,
     pub pending_pdf_page: usize,
+    pub document_path: String,
+    pub save_status: String,
     pub export_path: String,
     pub export_status: String,
+    pub last_autosave_unix_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -260,22 +279,26 @@ pub struct PendingStroke {
 #[derive(Debug, Clone)]
 pub struct PdfInteractionState {
     pub pending_open_path: String,
+    pub document_path: String,
     pub status_message: String,
     pub page_count: usize,
     pub active_stroke: Option<PendingStroke>,
     pub next_annotation_id: u64,
     pub reading_session: Option<ReadingPlaybackSession>,
+    pub last_autosave_unix_ms: u64,
 }
 
 impl Default for PdfInteractionState {
     fn default() -> Self {
         Self {
             pending_open_path: String::new(),
+            document_path: String::new(),
             status_message: String::new(),
             page_count: 1,
             active_stroke: None,
             next_annotation_id: 0,
             reading_session: None,
+            last_autosave_unix_ms: 0,
         }
     }
 }
@@ -309,12 +332,13 @@ impl Default for AnnotationToolState {
 }
 
 fn default_canvas_document() -> CanvasDocument {
+    let now = current_unix_ms();
     CanvasDocument {
         metadata: DocumentMetadata {
             document_id: "canvas-default".to_string(),
             title: Some("Untitled canvas".to_string()),
-            created_unix_ms: 0,
-            modified_unix_ms: 0,
+            created_unix_ms: now,
+            modified_unix_ms: now,
         },
         viewport: ViewportState {
             origin: Point { x: 0.0, y: 0.0 },
@@ -335,12 +359,13 @@ fn default_canvas_document() -> CanvasDocument {
 }
 
 fn default_pdf_session() -> PdfDocumentSession {
+    let now = current_unix_ms();
     PdfDocumentSession {
         metadata: DocumentMetadata {
             document_id: "pdf-default".to_string(),
             title: Some("No PDF opened".to_string()),
-            created_unix_ms: 0,
-            modified_unix_ms: 0,
+            created_unix_ms: now,
+            modified_unix_ms: now,
         },
         source: PdfSource::FilePath("".into()),
         viewport: PdfViewportState {
@@ -379,4 +404,56 @@ fn default_pdf_session() -> PdfDocumentSession {
             dirty: false,
         },
     }
+}
+
+impl RpdfApp {
+    fn tick_autosave(&mut self) {
+        const AUTOSAVE_INTERVAL_MS: u64 = 2_000;
+        let now = current_unix_ms();
+
+        if self.shell.canvas_mode.document.autosave.dirty
+            && now.saturating_sub(self.shell.canvas_mode.ui.last_autosave_unix_ms)
+                >= AUTOSAVE_INTERVAL_MS
+            && let Ok(snapshot_path) = self
+                .services
+                .persistence
+                .write_canvas_recovery_snapshot(&self.shell.canvas_mode.document)
+        {
+            self.shell
+                .canvas_mode
+                .document
+                .autosave
+                .recovery_snapshot_id = Some(snapshot_path);
+            self.shell.canvas_mode.ui.last_autosave_unix_ms = now;
+        }
+
+        if self.shell.pdf_mode.session.autosave.dirty
+            && now.saturating_sub(self.shell.pdf_mode.ui.last_autosave_unix_ms)
+                >= AUTOSAVE_INTERVAL_MS
+            && let Ok(snapshot_path) = self
+                .services
+                .persistence
+                .write_pdf_recovery_snapshot(&self.shell.pdf_mode.session)
+        {
+            self.shell.pdf_mode.session.autosave.recovery_snapshot_id = Some(snapshot_path);
+            self.shell.pdf_mode.ui.last_autosave_unix_ms = now;
+        }
+    }
+
+    fn mark_canvas_dirty(&mut self) {
+        self.shell.canvas_mode.document.metadata.modified_unix_ms = current_unix_ms();
+        self.shell.canvas_mode.document.autosave.dirty = true;
+    }
+
+    fn mark_pdf_dirty(&mut self) {
+        self.shell.pdf_mode.session.metadata.modified_unix_ms = current_unix_ms();
+        self.shell.pdf_mode.session.autosave.dirty = true;
+    }
+}
+
+fn current_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
 }
