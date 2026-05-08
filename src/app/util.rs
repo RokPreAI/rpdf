@@ -126,6 +126,19 @@ pub(super) fn screen_to_pdf_page(page_rect: egui::Rect, pos: egui::Pos2) -> Poin
 }
 
 pub(super) fn best_effort_extract_pdf_text(path: &str) -> String {
+    if let Ok(output) = std::process::Command::new("pdftotext")
+        .arg(path)
+        .arg("-")
+        .output()
+        && output.status.success()
+    {
+        let extracted = String::from_utf8_lossy(&output.stdout);
+        let normalized = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !normalized.is_empty() {
+            return normalized;
+        }
+    }
+
     let Ok(bytes) = std::fs::read(path) else {
         return String::new();
     };

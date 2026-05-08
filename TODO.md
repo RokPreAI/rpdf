@@ -2,15 +2,16 @@
 
 ## Current TODOs
 
-- [ ] 2 Ocr add-text-fallback-and-warning-flow
+- [ ] 1 Persistence add-save-load-and-recovery
 
 ## Active TODOs
 
-- [ ] 2 Persistence add-save-load-and-recovery
-- [ ] 3 Validation add-offline-acceptance-checks
+- [ ] 2 Validation add-offline-acceptance-checks
+- [ ] 3 Ux run-study-session-ux-hardening
 
 ## Done TODOs
 
+- [x] 0 Ocr add-text-fallback-and-warning-flow
 - [x] 1 Services formalize-reading-and-export-services
 - [x] 1 Ui extract-mode-shells-and-shared-ui-state
 - [x] 0 Architecture refactor-app-into-modules
@@ -367,63 +368,67 @@ This task can start with native text flows. OCR fallback belongs to a later task
 
 ### add-text-fallback-and-warning-flow
 
-Priority: 2
+Priority: 0
 Area: Ocr
-Status: pending
+Status: done
 Depends on: add-pdf-tts-and-highlight-modes, formalize-reading-and-export-services
 
 Goal:
 Add the required fallback order for unreliable PDF text: native text first, OCR second, and a clear user warning when reliable text-based reading support still cannot be produced.
 
 Context:
-This is the main risk-control behavior identified by both `SPEC.md` and `research/RESEARCH.md`. It prevents the product from silently pretending that weak text extraction is reliable.
+This is the main risk-control behavior identified by `PLAN.md` and the earlier specification work. The current code already has `ReadingSupportService`, `TextSupportSource`, `ReadingReliability`, `WarningCode`, and `HighlightMode::ManualFallback`, but `start_pdf_tts()` still only attempts native extraction and then stops with a pre-OCR warning. The next worker should extend the existing reading-support boundary instead of pushing more fallback logic directly into the PDF UI flow.
 
 Expected changes:
-- Reliability checks for native PDF text extraction.
-- OCR invocation and result-handling behavior.
-- Warning states for unreliable text-based reading support.
-- Fallback highlighting behavior when precise text-linked highlighting is not available.
+- Add reliability checks around the existing native PDF extraction path in `src/app/services.rs` and `src/app/pdf.rs`.
+- Introduce an OCR-capable fallback path or an explicit placeholder adapter boundary if a concrete OCR backend is still deferred.
+- Update `ReadingSupportState` transitions so `text_source`, `reliability`, `warning`, and `tts.active_span` stay internally consistent across native success, OCR fallback success, and total failure.
+- Use `HighlightMode::ManualFallback` or equivalent coarse follow-along behavior when precise text-linked highlighting is not possible.
+- Keep annotation and basic PDF navigation usable even when reading support degrades.
 
 Acceptance criteria:
-- A user on a weak-text PDF triggers TTS/highlighting and the system attempts native text before OCR.
-- If OCR improves usability enough, the system proceeds using that result.
-- If neither path is reliable enough, the system warns the user clearly.
+- A user on a weak-text PDF triggers TTS/highlighting and the system attempts native text before any OCR path.
+- If OCR improves usability enough, the app proceeds with `TextSupportSource::OcrDerivedText` and a visible warning or status that fallback was used.
+- If neither native extraction nor OCR yields usable text, the app sets an explicit warning and does not pretend playback/highlighting is reliable.
 - Annotation remains available regardless of text support quality.
+- `cargo check` passes after the fallback flow is added.
 
 Notes:
-This task should focus on correctness of fallback behavior, not perfection of OCR quality.
+This task should focus on correctness of fallback behavior, not perfection of OCR quality. Keep the OCR integration narrow and behind the service boundary so backend changes remain isolated later.
 
 ### add-save-load-and-recovery
 
-Priority: 2
+Priority: 1
 Area: Persistence
-Status: pending
+Status: current
 Depends on: define-document-models, add-pdf-and-canvas-annotation-tools, refactor-app-into-modules
 
 Goal:
 Implement save, load, autosave, and recovery behavior for editable user work while preserving the project's offline-first and portable-output goals.
 
 Context:
-The specification allows an internal format for autosave and recovery, but user-facing workflows should still prefer portable outputs where practical.
+The model layer already includes `AutosaveState`, dirty tracking is already toggled from canvas edits, and the UI currently exposes document dirtiness, but there is no real serialization, reopen flow, or recovery path yet. This task should turn the existing state markers into an actual offline persistence workflow for both canvas and PDF-study state.
 
 Expected changes:
-- Editable document persistence for canvases and annotation state.
-- Autosave and recovery flow.
-- Recovery prompts or recovery-state handling after interrupted work.
-- Clear separation between editable working state and export outputs.
+- Define a concrete editable-file format and file locations for canvas and PDF-study sessions.
+- Implement save and load behavior for the current document/session models rather than only export behavior.
+- Add autosave snapshot writing and interrupted-session recovery handling using the existing `AutosaveState` fields or an expanded equivalent.
+- Keep editable working-state persistence separate from user-facing exports such as SVG or recolored PDF output.
+- Update any minimal UI controls or status messages needed to make save/load/recovery understandable.
 
 Acceptance criteria:
-- A user can save and reopen editable work.
-- A user can recover work after an interrupted session using the app's recovery behavior.
+- A user can save editable work and reopen it in a later app session.
+- A user can recover recent unsaved work after an interrupted session using a documented in-app recovery path.
 - Recovery/internal state does not replace explicit user export options.
 - Core save/load workflows work without internet access.
+- `cargo check` passes after the persistence flow is added.
 
 Notes:
-Do not let recovery-only storage become the only way users retain their work.
+Do not let recovery-only storage become the only way users retain their work. Prefer a simple, explicit format and flow over speculative sync or database complexity.
 
 ### add-offline-acceptance-checks
 
-Priority: 3
+Priority: 2
 Area: Validation
 Status: pending
 Depends on: refactor-app-into-modules, extract-mode-shells-and-shared-ui-state, formalize-reading-and-export-services, add-text-fallback-and-warning-flow, add-save-load-and-recovery
@@ -432,19 +437,49 @@ Goal:
 Add repeatable verification for the specification's acceptance checks so future workers can confirm the product remains aligned with the contract.
 
 Context:
-The repo currently has only idea/spec artifacts. Once implementation starts, the project needs explicit acceptance checks that map back to `SPEC.md` instead of relying on memory.
+The repo now has a working Rust prototype plus multiple worker reports, but verification is still mostly compile-level and memory-driven. This task should convert the plan and existing feature slices into a durable verification layer that covers offline use, weak-PDF behavior, export gating, and persistence.
 
 Expected changes:
-- Test cases, scripted checks, or a manual verification checklist mapped to the specification.
-- Sample assets for normal PDFs, messy/scanned PDFs, mixed-content canvases, and vector-only selections.
-- Documentation of what can be verified automatically and what still needs manual validation with a drawing tablet.
+- Add test cases, scripted checks, and/or a manual verification checklist mapped to the implemented plan milestones.
+- Add or document sample assets for normal PDFs, messy or scanned PDFs, mixed-content canvases, and vector-only selections.
+- Record what can be verified automatically with `cargo test`, `cargo check`, or deterministic sample-driven checks versus what still needs manual tablet testing.
+- Make the acceptance mapping easy for later workers to rerun without rereading all reports.
 
 Acceptance criteria:
-- The project has a documented way to verify each acceptance area in `SPEC.md`.
+- The project has a documented way to verify each relevant acceptance area in the current plan/spec artifacts.
 - Offline operation is explicitly checked.
 - SVG-export eligibility and refusal behavior are explicitly checked.
 - Weak-PDF fallback and warning behavior are explicitly checked.
+- Save/load and recovery behavior are explicitly checked.
 - Any manual-only checks are clearly identified instead of being left implicit.
 
 Notes:
-Keep the acceptance mapping close to the specification so the contract stays executable.
+Keep the acceptance mapping close to the specification so the contract stays executable. Avoid writing checks that depend on network services.
+
+### run-study-session-ux-hardening
+
+Priority: 3
+Area: Ux
+Status: pending
+Depends on: add-offline-acceptance-checks
+
+Goal:
+Use real study-session validation to tighten pen feel, warning clarity, tool placement, and mode-specific friction before treating the app as a dependable study tool.
+
+Context:
+`PLAN.md` ends with a dedicated UX-hardening phase driven by actual use rather than abstract polish. That phase is currently missing from the backlog. The repo already has the core canvas, PDF, recolor, TTS, export, and pending fallback/persistence work; once verification exists, the remaining high-value task is to run realistic study sessions and turn observed friction into targeted fixes.
+
+Expected changes:
+- Run structured manual study-session checks on both Infinite Canvas Mode and PDF Mode using realistic PDFs and annotation flows.
+- Capture concrete friction points around pen behavior, reading controls, warnings, export explanations, and switching between reading and note-taking.
+- Implement a bounded set of code or UI improvements driven by those findings.
+- Write down the remaining known UX issues that should stay deferred.
+
+Acceptance criteria:
+- The project has a documented study-session validation pass, not just feature-by-feature spot checks.
+- At least one concrete UX issue discovered during real use is fixed or explicitly deferred with rationale.
+- Mode boundaries remain clear while reducing friction in normal study flows.
+- Any remaining tablet-only or long-session validation gaps are called out explicitly.
+
+Notes:
+Keep this phase evidence-driven. Do not invent generic polish work before the acceptance checks and real-use pass expose concrete problems.
