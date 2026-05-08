@@ -2,14 +2,13 @@
 
 ## Current TODOs
 
-- [ ] 2 Validation add-offline-acceptance-checks
+- [ ] 3 Ux run-study-session-ux-hardening
 
 ## Active TODOs
 
-- [ ] 3 Ux run-study-session-ux-hardening
-
 ## Done TODOs
 
+- [x] 2 Validation add-offline-acceptance-checks
 - [x] 1 Persistence add-save-load-and-recovery
 - [x] 0 Ocr add-text-fallback-and-warning-flow
 - [x] 1 Services formalize-reading-and-export-services
@@ -430,7 +429,7 @@ Do not let recovery-only storage become the only way users retain their work. Pr
 
 Priority: 2
 Area: Validation
-Status: current
+Status: done
 Depends on: refactor-app-into-modules, extract-mode-shells-and-shared-ui-state, formalize-reading-and-export-services, add-text-fallback-and-warning-flow, add-save-load-and-recovery
 
 Goal:
@@ -460,7 +459,7 @@ Keep the acceptance mapping close to the specification so the contract stays exe
 
 Priority: 3
 Area: Ux
-Status: pending
+Status: current
 Depends on: add-offline-acceptance-checks
 
 Goal:

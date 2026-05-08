@@ -379,16 +379,27 @@ fn create_ocr_temp_dir() -> Result<PathBuf, std::io::Error> {
 }
 
 fn recovery_root() -> PathBuf {
+    let mut candidates = Vec::new();
     if let Ok(state_home) = std::env::var("XDG_STATE_HOME") {
-        return PathBuf::from(state_home).join("rpdf").join("recovery");
+        candidates.push(PathBuf::from(state_home).join("rpdf").join("recovery"));
     }
     if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home)
-            .join(".local")
-            .join("state")
-            .join("rpdf")
-            .join("recovery");
+        candidates.push(
+            PathBuf::from(home)
+                .join(".local")
+                .join("state")
+                .join("rpdf")
+                .join("recovery"),
+        );
     }
+    candidates.push(std::env::temp_dir().join("rpdf").join("recovery"));
+
+    for candidate in &candidates {
+        if std::fs::create_dir_all(candidate).is_ok() {
+            return candidate.clone();
+        }
+    }
+
     std::env::temp_dir().join("rpdf").join("recovery")
 }
 
@@ -402,15 +413,17 @@ fn current_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        PersistenceService, TextQuality, current_unix_ms, native_text_quality,
+        CanvasExportService, PersistenceService, TextQuality, current_unix_ms, native_text_quality,
         normalize_extracted_text,
     };
     use crate::model::{
-        AnnotationAppearanceSet, AnnotationVisibility, AutosaveState, BackgroundPattern,
-        BackgroundPatternStyle, CanvasDocument, DocumentMetadata, HighlightMode,
-        PdfDocumentSession, PdfSource, PdfViewState, PdfViewportState, PlaybackState, Point,
-        ReadingReliability, ReadingSupportState, RecolorExportMode, RecolorState, RgbaColor,
-        SelectionTarget, TextSupportSource, TtsState, ViewportState, WarningCode,
+        AnnotationAppearanceSet, AnnotationLayerRole, AnnotationVisibility, AutosaveState,
+        BackgroundPattern, BackgroundPatternStyle, BrushStyle, CanvasDocument, CanvasItem,
+        DocumentMetadata, HighlightMode, ImportedAssetSource, ImportedImageItem,
+        ImportedPdfPageItem, PdfDocumentSession, PdfSource, PdfViewState, PdfViewportState,
+        PenStrokeItem, PenToolKind, PlaybackState, Point, ReadingReliability, ReadingSupportState,
+        RecolorExportMode, RecolorState, Rect, RgbaColor, SelectionTarget, Size, StrokePoint,
+        TextItem, TextStyle, TextSupportSource, TtsState, ViewportState, WarningCode,
     };
 
     #[test]
@@ -474,6 +487,91 @@ mod tests {
         assert!(!loaded.autosave.dirty);
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn recovers_canvas_snapshot() {
+        let service = PersistenceService;
+        let document = sample_canvas_document();
+
+        let snapshot_path = service
+            .write_canvas_recovery_snapshot(&document)
+            .expect("write canvas recovery");
+        let recovered = service
+            .recover_canvas_document()
+            .expect("recover canvas")
+            .expect("expected canvas recovery snapshot");
+
+        assert_eq!(
+            recovered.metadata.document_id,
+            document.metadata.document_id
+        );
+        let _ = std::fs::remove_file(snapshot_path);
+    }
+
+    #[test]
+    fn recovers_pdf_snapshot() {
+        let service = PersistenceService;
+        let session = sample_pdf_session();
+
+        let snapshot_path = service
+            .write_pdf_recovery_snapshot(&session)
+            .expect("write pdf recovery");
+        let recovered = service
+            .recover_pdf_session()
+            .expect("recover pdf")
+            .expect("expected pdf recovery snapshot");
+
+        assert_eq!(recovered.metadata.document_id, session.metadata.document_id);
+        let _ = std::fs::remove_file(snapshot_path);
+    }
+
+    #[test]
+    fn svg_export_allows_vector_only_targets() {
+        let service = CanvasExportService;
+        let stroke = CanvasItem::PenStroke(sample_pen_stroke_item());
+        let text = CanvasItem::Text(sample_text_item());
+
+        let items = vec![&stroke, &text];
+        assert_eq!(service.first_incompatibility(&items), None);
+    }
+
+    #[test]
+    fn svg_export_rejects_raster_and_pdf_targets() {
+        let service = CanvasExportService;
+        let image = CanvasItem::ImportedImage(ImportedImageItem {
+            item_id: "image-1".to_string(),
+            source: ImportedAssetSource::FilePath("/tmp/sample.png".into()),
+            bounds: Rect {
+                origin: Point { x: 0.0, y: 0.0 },
+                size: Size {
+                    width: 100.0,
+                    height: 100.0,
+                },
+            },
+        });
+        let pdf = CanvasItem::ImportedPdfPage(ImportedPdfPageItem {
+            item_id: "pdf-1".to_string(),
+            source: PdfSource::FilePath("/tmp/sample.pdf".into()),
+            page_index: 0,
+            bounds: Rect {
+                origin: Point { x: 0.0, y: 0.0 },
+                size: Size {
+                    width: 100.0,
+                    height: 100.0,
+                },
+            },
+            recolor_override: None,
+        });
+
+        assert_eq!(
+            service.first_incompatibility(&[&image]),
+            Some(crate::model::IncompatibleExportReason::RasterContent)
+        );
+        assert_eq!(
+            service.first_incompatibility(&[&pdf]),
+            Some(crate::model::IncompatibleExportReason::ImportedPdfPage)
+        );
     }
 
     fn unique_test_path(name: &str) -> String {
@@ -564,6 +662,47 @@ mod tests {
             ink_color: sample_appearance().normal_view,
             highlighter_color: sample_appearance().normal_view,
             text_color: sample_appearance().normal_view,
+        }
+    }
+
+    fn sample_pen_stroke_item() -> PenStrokeItem {
+        PenStrokeItem {
+            item_id: "stroke-1".to_string(),
+            points: vec![
+                StrokePoint {
+                    position: Point { x: 0.0, y: 0.0 },
+                    pressure: 1.0,
+                },
+                StrokePoint {
+                    position: Point { x: 10.0, y: 10.0 },
+                    pressure: 1.0,
+                },
+            ],
+            brush: BrushStyle {
+                color: sample_appearance(),
+                width: 4.0,
+                tool: PenToolKind::Ink,
+            },
+            layer_role: AnnotationLayerRole::CanvasMarkup,
+        }
+    }
+
+    fn sample_text_item() -> TextItem {
+        TextItem {
+            item_id: "text-1".to_string(),
+            bounds: Rect {
+                origin: Point { x: 0.0, y: 0.0 },
+                size: Size {
+                    width: 100.0,
+                    height: 30.0,
+                },
+            },
+            text: "hello".to_string(),
+            style: TextStyle {
+                font_family: "Proportional".to_string(),
+                font_size: 20.0,
+                color: sample_appearance(),
+            },
         }
     }
 
