@@ -6,6 +6,20 @@ use super::*;
 impl RpdfApp {
     pub(super) fn render_pdf_workspace(&mut self, ui: &mut egui::Ui) {
         ui.heading("PDF Mode");
+        self.render_status_banner(
+            ui,
+            BannerTone::Info,
+            "Study flow",
+            "Open a document, read or listen, then annotate in place. PDF Mode stays document-focused so reading support and markup do not drift into canvas behavior.",
+        );
+        ui.add_space(8.0);
+        self.render_autosave_banner(
+            ui,
+            self.shell.pdf_mode.session.autosave.dirty,
+            self.services.persistence.has_pdf_recovery_snapshot(),
+            "PDF session",
+        );
+        ui.add_space(8.0);
         self.render_annotation_toolbar(ui, WorkspaceMode::PdfDocument);
         ui.add_space(8.0);
         self.render_pdf_toolbar(ui);
@@ -59,212 +73,250 @@ impl RpdfApp {
 
     fn render_pdf_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
-            ui.horizontal(|ui| {
-                ui.label("PDF path:");
-                ui.text_edit_singleline(&mut self.shell.pdf_mode.ui.pending_open_path);
-                if ui.button("Open PDF").clicked() {
-                    self.open_pdf_document();
-                }
-            });
+            egui::CollapsingHeader::new("Files and recovery")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("PDF path:");
+                        ui.text_edit_singleline(&mut self.shell.pdf_mode.ui.pending_open_path);
+                        if ui.button("Open PDF").clicked() {
+                            self.open_pdf_document();
+                        }
+                    });
 
-            ui.horizontal(|ui| {
-                ui.label("Save path:");
-                ui.text_edit_singleline(&mut self.shell.pdf_mode.ui.document_path);
-                if ui.button("Save session").clicked() {
-                    self.save_pdf_session();
-                }
-                if ui.button("Load session").clicked() {
-                    self.load_pdf_session();
-                }
-                if ui
-                    .add_enabled(
-                        self.services.persistence.has_pdf_recovery_snapshot(),
-                        egui::Button::new("Recover autosave"),
-                    )
-                    .clicked()
-                {
-                    self.recover_pdf_session();
-                }
-            });
+                    ui.horizontal(|ui| {
+                        ui.label("Save path:");
+                        ui.text_edit_singleline(&mut self.shell.pdf_mode.ui.document_path);
+                        if ui.button("Save session").clicked() {
+                            self.save_pdf_session();
+                        }
+                        if ui.button("Load session").clicked() {
+                            self.load_pdf_session();
+                        }
+                        if ui
+                            .add_enabled(
+                                self.services.persistence.has_pdf_recovery_snapshot(),
+                                egui::Button::new("Recover autosave"),
+                            )
+                            .clicked()
+                        {
+                            self.recover_pdf_session();
+                        }
+                    });
 
-            if !self.shell.pdf_mode.ui.status_message.is_empty() {
-                ui.label(&self.shell.pdf_mode.ui.status_message);
-            }
-
-            ui.horizontal(|ui| {
-                if ui.button("Previous").clicked() {
-                    self.step_pdf_page(-1);
-                }
-                if ui.button("Next").clicked() {
-                    self.step_pdf_page(1);
-                }
-
-                let mut display_page = self.shell.pdf_mode.session.viewport.page_index + 1;
-                ui.label("Page:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut display_page)
-                            .range(1..=self.shell.pdf_mode.ui.page_count.max(1)),
-                    )
-                    .changed()
-                {
-                    self.shell.pdf_mode.session.viewport.page_index = display_page
-                        .saturating_sub(1)
-                        .min(self.shell.pdf_mode.ui.page_count.saturating_sub(1));
-                    self.mark_pdf_dirty();
-                }
-
-                ui.label(format!("of {}", self.shell.pdf_mode.ui.page_count));
-                ui.separator();
-                ui.label("Document-focused workspace");
-            });
-
-            ui.separator();
-            let mut recolor_enabled = self
-                .shell
-                .pdf_mode
-                .session
-                .view
-                .recolor
-                .current_profile
-                .is_some();
-            if ui
-                .checkbox(&mut recolor_enabled, "Enable recolor view")
-                .changed()
-            {
-                if recolor_enabled {
-                    self.shell.pdf_mode.session.view.recolor.current_profile =
-                        Some(default_recolor_profile());
-                } else {
-                    self.shell.pdf_mode.session.view.recolor.current_profile = None;
-                }
-                self.mark_pdf_dirty();
-            }
-
-            let mut recolor_profile_changed = false;
-            if let Some(profile) = self
-                .shell
-                .pdf_mode
-                .session
-                .view
-                .recolor
-                .current_profile
-                .as_mut()
-            {
-                ui.horizontal(|ui| {
-                    ui.label("Foreground");
-                    let mut foreground = to_color32(profile.foreground);
-                    if ui.color_edit_button_srgba(&mut foreground).changed() {
-                        profile.foreground = from_color32(foreground);
-                        recolor_profile_changed = true;
-                    }
-
-                    ui.label("Background");
-                    let mut background = to_color32(profile.background);
-                    if ui.color_edit_button_srgba(&mut background).changed() {
-                        profile.background = from_color32(background);
-                        recolor_profile_changed = true;
-                    }
+                    self.render_feedback_message(ui, &self.shell.pdf_mode.ui.status_message);
                 });
-            }
-            if recolor_profile_changed {
-                self.mark_pdf_dirty();
-            }
 
-            ui.horizontal(|ui| {
-                ui.label("PDF export recolor:");
-                let preserve_changed = ui
-                    .selectable_value(
-                        &mut self.shell.pdf_mode.session.view.recolor.export_mode,
-                        RecolorExportMode::PreserveOriginalAppearance,
-                        "Preserve original",
-                    )
-                    .changed();
-                let recolor_changed = ui
-                    .selectable_value(
-                        &mut self.shell.pdf_mode.session.view.recolor.export_mode,
-                        RecolorExportMode::IncludeCurrentRecoloring,
-                        "Include recolor",
-                    )
-                    .changed();
-                if preserve_changed || recolor_changed {
-                    self.mark_pdf_dirty();
-                }
-            });
+            egui::CollapsingHeader::new("Navigation and view")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("Previous").clicked() {
+                            self.step_pdf_page(-1);
+                        }
+                        if ui.button("Next").clicked() {
+                            self.step_pdf_page(1);
+                        }
 
-            ui.collapsing("Annotation palettes", |ui| {
-                render_palette_editor(
-                    ui,
-                    "Normal",
-                    &mut self
+                        let mut display_page = self.shell.pdf_mode.session.viewport.page_index + 1;
+                        ui.label("Page:");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut display_page)
+                                    .range(1..=self.shell.pdf_mode.ui.page_count.max(1)),
+                            )
+                            .changed()
+                        {
+                            self.shell.pdf_mode.session.viewport.page_index = display_page
+                                .saturating_sub(1)
+                                .min(self.shell.pdf_mode.ui.page_count.saturating_sub(1));
+                            self.mark_pdf_dirty();
+                        }
+
+                        ui.label(format!("of {}", self.shell.pdf_mode.ui.page_count));
+                        ui.separator();
+                        ui.label("Document-focused workspace");
+                    });
+
+                    let mut recolor_enabled = self
                         .shell
                         .pdf_mode
                         .session
                         .view
-                        .annotation_visibility
-                        .normal_view,
-                );
-                render_palette_editor(
-                    ui,
-                    "Recolored",
-                    &mut self
+                        .recolor
+                        .current_profile
+                        .is_some();
+                    if ui
+                        .checkbox(&mut recolor_enabled, "Enable recolor view")
+                        .changed()
+                    {
+                        if recolor_enabled {
+                            self.shell.pdf_mode.session.view.recolor.current_profile =
+                                Some(default_recolor_profile());
+                        } else {
+                            self.shell.pdf_mode.session.view.recolor.current_profile = None;
+                        }
+                        self.mark_pdf_dirty();
+                    }
+
+                    let mut recolor_profile_changed = false;
+                    if let Some(profile) = self
                         .shell
                         .pdf_mode
                         .session
                         .view
-                        .annotation_visibility
-                        .recolored_view,
-                );
-            });
+                        .recolor
+                        .current_profile
+                        .as_mut()
+                    {
+                        ui.horizontal(|ui| {
+                            ui.label("Foreground");
+                            let mut foreground = to_color32(profile.foreground);
+                            if ui.color_edit_button_srgba(&mut foreground).changed() {
+                                profile.foreground = from_color32(foreground);
+                                recolor_profile_changed = true;
+                            }
 
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label("Highlight mode:");
-                ui.selectable_value(
-                    &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
-                    HighlightMode::Word,
-                    "Word",
-                );
-                ui.selectable_value(
-                    &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
-                    HighlightMode::Line,
-                    "Line",
-                );
-                ui.selectable_value(
-                    &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
-                    HighlightMode::Sentence,
-                    "Sentence",
-                );
-                ui.selectable_value(
-                    &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
-                    HighlightMode::ManualFallback,
-                    "Manual fallback",
-                );
-            });
+                            ui.label("Background");
+                            let mut background = to_color32(profile.background);
+                            if ui.color_edit_button_srgba(&mut background).changed() {
+                                profile.background = from_color32(background);
+                                recolor_profile_changed = true;
+                            }
+                        });
+                    }
+                    if recolor_profile_changed {
+                        self.mark_pdf_dirty();
+                    }
 
-            ui.horizontal(|ui| {
-                if ui.button("Start TTS").clicked() {
-                    self.start_pdf_tts();
-                }
-                if ui.button("Stop TTS").clicked() {
-                    self.stop_pdf_tts();
-                }
-                ui.label(format!(
-                    "Playback: {:?}",
-                    self.shell.pdf_mode.session.reading_support.tts.playback
-                ));
-            });
+                    ui.horizontal(|ui| {
+                        ui.label("PDF export recolor:");
+                        let preserve_changed = ui
+                            .selectable_value(
+                                &mut self.shell.pdf_mode.session.view.recolor.export_mode,
+                                RecolorExportMode::PreserveOriginalAppearance,
+                                "Preserve original",
+                            )
+                            .changed();
+                        let recolor_changed = ui
+                            .selectable_value(
+                                &mut self.shell.pdf_mode.session.view.recolor.export_mode,
+                                RecolorExportMode::IncludeCurrentRecoloring,
+                                "Include recolor",
+                            )
+                            .changed();
+                        if preserve_changed || recolor_changed {
+                            self.mark_pdf_dirty();
+                        }
+                    });
 
-            ui.label(format!(
-                "Text source: {:?} | Reliability: {:?}",
-                self.shell.pdf_mode.session.reading_support.text_source,
-                self.shell.pdf_mode.session.reading_support.reliability
-            ));
+                    ui.collapsing("Annotation palettes", |ui| {
+                        render_palette_editor(
+                            ui,
+                            "Normal",
+                            &mut self
+                                .shell
+                                .pdf_mode
+                                .session
+                                .view
+                                .annotation_visibility
+                                .normal_view,
+                        );
+                        render_palette_editor(
+                            ui,
+                            "Recolored",
+                            &mut self
+                                .shell
+                                .pdf_mode
+                                .session
+                                .view
+                                .annotation_visibility
+                                .recolored_view,
+                        );
+                    });
+                });
 
-            if let Some(warning) = &self.shell.pdf_mode.session.reading_support.warning {
-                ui.label(format!("Reading warning: {}", warning.message));
-            }
+            egui::CollapsingHeader::new("Reading support")
+                .default_open(true)
+                .show(ui, |ui| {
+                    self.render_pdf_reading_guidance(ui);
+
+                    ui.horizontal(|ui| {
+                        ui.label("Highlight mode:");
+                        ui.selectable_value(
+                            &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
+                            HighlightMode::Word,
+                            "Word",
+                        );
+                        ui.selectable_value(
+                            &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
+                            HighlightMode::Line,
+                            "Line",
+                        );
+                        ui.selectable_value(
+                            &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
+                            HighlightMode::Sentence,
+                            "Sentence",
+                        );
+                        ui.selectable_value(
+                            &mut self.shell.pdf_mode.session.reading_support.highlight_mode,
+                            HighlightMode::ManualFallback,
+                            "Manual fallback",
+                        );
+                    });
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Start TTS").clicked() {
+                            self.start_pdf_tts();
+                        }
+                        if ui.button("Stop TTS").clicked() {
+                            self.stop_pdf_tts();
+                        }
+                        ui.label(format!(
+                            "Playback: {:?}",
+                            self.shell.pdf_mode.session.reading_support.tts.playback
+                        ));
+                    });
+
+                    ui.label(format!(
+                        "Text source: {:?} | Reliability: {:?}",
+                        self.shell.pdf_mode.session.reading_support.text_source,
+                        self.shell.pdf_mode.session.reading_support.reliability
+                    ));
+                });
         });
+    }
+
+    fn render_pdf_reading_guidance(&self, ui: &mut egui::Ui) {
+        let source = self.shell.pdf_mode.session.reading_support.text_source;
+        let playback = self.shell.pdf_mode.session.reading_support.tts.playback;
+
+        let (tone, title, body) = match source {
+            TextSupportSource::NativePdfText => (
+                BannerTone::Success,
+                "Reading support",
+                if playback == PlaybackState::Playing {
+                    "Native PDF text is active. Highlighting should follow the document with the selected mode."
+                } else {
+                    "Native PDF text is available. Start TTS when you want follow-along highlighting."
+                },
+            ),
+            TextSupportSource::OcrDerivedText => (
+                BannerTone::Warning,
+                "Reading support",
+                "OCR fallback is active. The app keeps annotation available, but highlight precision falls back to a coarse manual mode.",
+            ),
+            TextSupportSource::Unavailable => (
+                BannerTone::Info,
+                "Reading support",
+                "Open a PDF, then start TTS to test native text extraction before relying on OCR fallback.",
+            ),
+        };
+        self.render_status_banner(ui, tone, title, body);
+
+        if let Some(warning) = &self.shell.pdf_mode.session.reading_support.warning {
+            self.render_status_banner(ui, BannerTone::Warning, "Reading warning", &warning.message);
+        }
     }
 
     fn handle_pdf_drawing(&mut self, ui: &egui::Ui, page_rect: egui::Rect) {

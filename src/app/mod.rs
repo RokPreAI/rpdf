@@ -83,6 +83,15 @@ impl eframe::App for RpdfApp {
 impl RpdfApp {
     fn render_canvas_summary(&mut self, ui: &mut egui::Ui) {
         ui.heading("Canvas Root");
+        ui.label(
+            self.shell
+                .canvas_mode
+                .document
+                .metadata
+                .title
+                .as_deref()
+                .unwrap_or("Untitled canvas"),
+        );
         ui.label(format!(
             "Items: {}",
             self.shell.canvas_mode.document.items.len()
@@ -105,6 +114,14 @@ impl RpdfApp {
             self.shell.canvas_mode.document.autosave.dirty
         ));
         ui.label(format!(
+            "Recovery snapshot: {}",
+            if self.services.persistence.has_canvas_recovery_snapshot() {
+                "available"
+            } else {
+                "none"
+            }
+        ));
+        ui.label(format!(
             "Active stroke points: {}",
             self.shell
                 .canvas_mode
@@ -125,6 +142,15 @@ impl RpdfApp {
 
     fn render_pdf_summary(&self, ui: &mut egui::Ui) {
         ui.heading("PDF Root");
+        ui.label(
+            self.shell
+                .pdf_mode
+                .session
+                .metadata
+                .title
+                .as_deref()
+                .unwrap_or("No PDF opened"),
+        );
         ui.label(format!(
             "Page: {}",
             self.shell.pdf_mode.session.viewport.page_index + 1
@@ -149,6 +175,18 @@ impl RpdfApp {
         ui.label(format!(
             "PDF annotations: {}",
             self.shell.pdf_mode.session.annotations.len()
+        ));
+        ui.label(format!(
+            "Dirty: {}",
+            self.shell.pdf_mode.session.autosave.dirty
+        ));
+        ui.label(format!(
+            "Recovery snapshot: {}",
+            if self.services.persistence.has_pdf_recovery_snapshot() {
+                "available"
+            } else {
+                "none"
+            }
         ));
     }
 
@@ -181,6 +219,96 @@ impl RpdfApp {
                 }
             });
         });
+    }
+
+    fn render_status_banner(&self, ui: &mut egui::Ui, tone: BannerTone, title: &str, body: &str) {
+        let (fill, stroke, text) = match tone {
+            BannerTone::Info => (
+                egui::Color32::from_rgb(31, 44, 64),
+                egui::Color32::from_rgb(92, 132, 186),
+                egui::Color32::from_rgb(229, 239, 252),
+            ),
+            BannerTone::Success => (
+                egui::Color32::from_rgb(29, 54, 44),
+                egui::Color32::from_rgb(96, 170, 132),
+                egui::Color32::from_rgb(229, 250, 238),
+            ),
+            BannerTone::Warning => (
+                egui::Color32::from_rgb(71, 53, 24),
+                egui::Color32::from_rgb(214, 172, 87),
+                egui::Color32::from_rgb(255, 244, 220),
+            ),
+        };
+
+        egui::Frame::group(ui.style())
+            .fill(fill)
+            .stroke(egui::Stroke::new(1.0, stroke))
+            .inner_margin(egui::Margin::same(10))
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new(title).strong().color(text));
+                ui.label(egui::RichText::new(body).color(text));
+            });
+    }
+
+    fn render_feedback_message(&self, ui: &mut egui::Ui, message: &str) {
+        if message.is_empty() {
+            return;
+        }
+
+        let lowercase = message.to_ascii_lowercase();
+        let tone = if lowercase.contains("failed")
+            || lowercase.contains("does not exist")
+            || lowercase.contains("unavailable")
+            || lowercase.contains("no ")
+            || lowercase.contains("needs ")
+            || lowercase.contains("canceled")
+        {
+            BannerTone::Warning
+        } else if lowercase.contains("saved")
+            || lowercase.contains("loaded")
+            || lowercase.contains("recovered")
+            || lowercase.contains("opened")
+            || lowercase.contains("exported")
+        {
+            BannerTone::Success
+        } else {
+            BannerTone::Info
+        };
+
+        self.render_status_banner(ui, tone, "Status", message);
+    }
+
+    fn render_autosave_banner(
+        &self,
+        ui: &mut egui::Ui,
+        dirty: bool,
+        has_recovery_snapshot: bool,
+        subject: &str,
+    ) {
+        let (tone, body) = if dirty {
+            (
+                BannerTone::Warning,
+                format!(
+                    "{subject} has unsaved changes. Autosave snapshots update in the background every few seconds."
+                ),
+            )
+        } else if has_recovery_snapshot {
+            (
+                BannerTone::Success,
+                format!(
+                    "{subject} is clean, and a recovery snapshot is available if the session is interrupted."
+                ),
+            )
+        } else {
+            (
+                BannerTone::Info,
+                format!(
+                    "{subject} is clean. Save a session or make a change to create a recoverable snapshot."
+                ),
+            )
+        };
+
+        self.render_status_banner(ui, tone, "Autosave", &body);
     }
 }
 
@@ -314,6 +442,13 @@ pub struct ReadingPlaybackSession {
 pub enum AnnotationTool {
     Ink,
     Highlighter,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BannerTone {
+    Info,
+    Success,
+    Warning,
 }
 
 #[derive(Debug, Clone)]

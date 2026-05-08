@@ -22,6 +22,10 @@ Today that script runs `cargo test`, which covers:
 - recovery snapshot round trips
 - SVG export eligibility gating for compatible and incompatible canvas targets
 
+For the latest UX-hardening findings and the remaining manual-only live-session gaps, also read:
+
+- [STUDY_SESSION_VALIDATION.md](/home/rok/sync/ideas/rpdf/STUDY_SESSION_VALIDATION.md:1)
+
 ## Required Manual Assets
 
 Use local offline assets for the manual checks below.

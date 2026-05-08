@@ -4,7 +4,7 @@ use crate::model::{
     ReadingReliability, SvgCompatibility, TextSupportSource, UserVisibleWarning, WarningCode,
 };
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -395,12 +395,24 @@ fn recovery_root() -> PathBuf {
     candidates.push(std::env::temp_dir().join("rpdf").join("recovery"));
 
     for candidate in &candidates {
-        if std::fs::create_dir_all(candidate).is_ok() {
+        if ensure_writable_directory(candidate).is_ok() {
             return candidate.clone();
         }
     }
 
     std::env::temp_dir().join("rpdf").join("recovery")
+}
+
+fn ensure_writable_directory(path: &Path) -> Result<(), std::io::Error> {
+    std::fs::create_dir_all(path)?;
+    let probe = path.join(format!(
+        ".write-test-{}-{}",
+        std::process::id(),
+        current_unix_ms()
+    ));
+    std::fs::write(&probe, b"rpdf")?;
+    let _ = std::fs::remove_file(probe);
+    Ok(())
 }
 
 fn current_unix_ms() -> u64 {

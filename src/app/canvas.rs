@@ -16,6 +16,20 @@ impl RpdfApp {
         });
 
         ui.add_space(8.0);
+        self.render_status_banner(
+            ui,
+            BannerTone::Info,
+            "Study flow",
+            "Draw first, then place text or references. Save and recovery stay separate from SVG export so study notes and portable output do not get confused.",
+        );
+        ui.add_space(8.0);
+        self.render_autosave_banner(
+            ui,
+            self.shell.canvas_mode.document.autosave.dirty,
+            self.services.persistence.has_canvas_recovery_snapshot(),
+            "Canvas session",
+        );
+        ui.add_space(8.0);
         self.render_annotation_toolbar(ui, WorkspaceMode::InfiniteCanvas);
         ui.add_space(8.0);
         self.render_canvas_toolbar(ui);
@@ -40,170 +54,228 @@ impl RpdfApp {
 
     fn render_canvas_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label("Background:");
-                if ui
-                    .selectable_label(
-                        matches!(
-                            self.shell.canvas_mode.document.background,
-                            BackgroundPattern::Dots(_)
-                        ),
-                        "Dots",
-                    )
-                    .clicked()
-                {
-                    self.shell.canvas_mode.document.background =
-                        BackgroundPattern::Dots(default_background_style());
-                    self.mark_canvas_dirty();
-                }
-                if ui
-                    .selectable_label(
-                        matches!(
-                            self.shell.canvas_mode.document.background,
-                            BackgroundPattern::Lines(_)
-                        ),
-                        "Lines",
-                    )
-                    .clicked()
-                {
-                    self.shell.canvas_mode.document.background =
-                        BackgroundPattern::Lines(default_background_style());
-                    self.mark_canvas_dirty();
-                }
-                if ui
-                    .selectable_label(
-                        matches!(
-                            self.shell.canvas_mode.document.background,
-                            BackgroundPattern::Squares(_)
-                        ),
-                        "Squares",
-                    )
-                    .clicked()
-                {
-                    self.shell.canvas_mode.document.background =
-                        BackgroundPattern::Squares(default_background_style());
-                    self.mark_canvas_dirty();
-                }
-            });
+            egui::CollapsingHeader::new("Files and recovery")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Save path:");
+                        ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.document_path);
+                        if ui.button("Save canvas").clicked() {
+                            self.save_canvas_document();
+                        }
+                        if ui.button("Load canvas").clicked() {
+                            self.load_canvas_document();
+                        }
+                        if ui
+                            .add_enabled(
+                                self.services.persistence.has_canvas_recovery_snapshot(),
+                                egui::Button::new("Recover autosave"),
+                            )
+                            .clicked()
+                        {
+                            self.recover_canvas_document();
+                        }
+                    });
+                    self.render_feedback_message(ui, &self.shell.canvas_mode.ui.save_status);
+                });
 
-            ui.separator();
+            egui::CollapsingHeader::new("Canvas content")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Background:");
+                        if ui
+                            .selectable_label(
+                                matches!(
+                                    self.shell.canvas_mode.document.background,
+                                    BackgroundPattern::Dots(_)
+                                ),
+                                "Dots",
+                            )
+                            .clicked()
+                        {
+                            self.shell.canvas_mode.document.background =
+                                BackgroundPattern::Dots(default_background_style());
+                            self.mark_canvas_dirty();
+                        }
+                        if ui
+                            .selectable_label(
+                                matches!(
+                                    self.shell.canvas_mode.document.background,
+                                    BackgroundPattern::Lines(_)
+                                ),
+                                "Lines",
+                            )
+                            .clicked()
+                        {
+                            self.shell.canvas_mode.document.background =
+                                BackgroundPattern::Lines(default_background_style());
+                            self.mark_canvas_dirty();
+                        }
+                        if ui
+                            .selectable_label(
+                                matches!(
+                                    self.shell.canvas_mode.document.background,
+                                    BackgroundPattern::Squares(_)
+                                ),
+                                "Squares",
+                            )
+                            .clicked()
+                        {
+                            self.shell.canvas_mode.document.background =
+                                BackgroundPattern::Squares(default_background_style());
+                            self.mark_canvas_dirty();
+                        }
+                    });
 
-            ui.horizontal(|ui| {
-                ui.label("Text:");
-                ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_text);
-                if ui.button("Add text").clicked() {
-                    self.add_canvas_text();
-                }
-            });
+                    ui.horizontal(|ui| {
+                        ui.label("Text:");
+                        ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_text);
+                        if ui.button("Add text").clicked() {
+                            self.add_canvas_text();
+                        }
+                    });
 
-            ui.horizontal(|ui| {
-                ui.label("Save path:");
-                ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.document_path);
-                if ui.button("Save canvas").clicked() {
-                    self.save_canvas_document();
-                }
-                if ui.button("Load canvas").clicked() {
-                    self.load_canvas_document();
-                }
-                if ui
-                    .add_enabled(
-                        self.services.persistence.has_canvas_recovery_snapshot(),
-                        egui::Button::new("Recover autosave"),
-                    )
-                    .clicked()
-                {
-                    self.recover_canvas_document();
-                }
-            });
-            if !self.shell.canvas_mode.ui.save_status.is_empty() {
-                ui.label(&self.shell.canvas_mode.ui.save_status);
-            }
+                    ui.horizontal(|ui| {
+                        ui.label("Image path:");
+                        ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_image_path);
+                        if ui.button("Import image").clicked() {
+                            self.import_canvas_image();
+                        }
+                    });
 
-            ui.horizontal(|ui| {
-                ui.label("Image path:");
-                ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_image_path);
-                if ui.button("Import image").clicked() {
-                    self.import_canvas_image();
-                }
-            });
+                    ui.horizontal(|ui| {
+                        ui.label("PDF path:");
+                        ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_pdf_path);
+                        ui.label("Page:");
+                        ui.add(
+                            egui::DragValue::new(&mut self.shell.canvas_mode.ui.pending_pdf_page)
+                                .range(1..=9999),
+                        );
+                        if ui.button("Import page").clicked() {
+                            self.import_canvas_pdf_page();
+                        }
+                    });
+                });
 
-            ui.horizontal(|ui| {
-                ui.label("PDF path:");
-                ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_pdf_path);
-                ui.label("Page:");
-                ui.add(
-                    egui::DragValue::new(&mut self.shell.canvas_mode.ui.pending_pdf_page)
-                        .range(1..=9999),
-                );
-                if ui.button("Import page").clicked() {
-                    self.import_canvas_pdf_page();
-                }
-            });
+            egui::CollapsingHeader::new("Selection and export")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.label("Selection:");
+                    ui.horizontal(|ui| {
+                        if ui.button("Whole canvas").clicked() {
+                            self.shell.canvas_mode.document.selection =
+                                SelectionTarget::WholeCanvas;
+                        }
+                        if ui.button("Clear item selection").clicked() {
+                            self.shell.canvas_mode.document.selection =
+                                SelectionTarget::ItemIds(Vec::new());
+                        }
+                    });
 
-            ui.separator();
-            ui.label("Selection:");
-            ui.horizontal(|ui| {
-                if ui.button("Whole canvas").clicked() {
-                    self.shell.canvas_mode.document.selection = SelectionTarget::WholeCanvas;
-                }
-                if ui.button("Clear item selection").clicked() {
-                    self.shell.canvas_mode.document.selection =
-                        SelectionTarget::ItemIds(Vec::new());
-                }
-            });
+                    let current_ids = match &self.shell.canvas_mode.document.selection {
+                        SelectionTarget::ItemIds(ids) => ids.clone(),
+                        _ => Vec::new(),
+                    };
+                    let mut selected_ids = current_ids;
 
-            let current_ids = match &self.shell.canvas_mode.document.selection {
-                SelectionTarget::ItemIds(ids) => ids.clone(),
-                _ => Vec::new(),
-            };
-            let mut selected_ids = current_ids;
-
-            for item in &self.shell.canvas_mode.document.items {
-                let item_id = canvas_item_id(item).to_string();
-                let mut selected = selected_ids.iter().any(|id| id == &item_id);
-                if ui
-                    .checkbox(
-                        &mut selected,
-                        format!("{} ({})", item_id, item_kind_label(item)),
-                    )
-                    .changed()
-                {
-                    if selected {
-                        selected_ids.push(item_id.clone());
-                    } else {
-                        selected_ids.retain(|id| id != &item_id);
+                    for item in &self.shell.canvas_mode.document.items {
+                        let item_id = canvas_item_id(item).to_string();
+                        let mut selected = selected_ids.iter().any(|id| id == &item_id);
+                        if ui
+                            .checkbox(
+                                &mut selected,
+                                format!("{} ({})", item_id, item_kind_label(item)),
+                            )
+                            .changed()
+                        {
+                            if selected {
+                                selected_ids.push(item_id.clone());
+                            } else {
+                                selected_ids.retain(|id| id != &item_id);
+                            }
+                        }
                     }
-                }
-            }
 
-            if !selected_ids.is_empty() {
-                selected_ids.sort();
-                selected_ids.dedup();
-                self.shell.canvas_mode.document.selection = SelectionTarget::ItemIds(selected_ids);
-            }
+                    if !selected_ids.is_empty() {
+                        selected_ids.sort();
+                        selected_ids.dedup();
+                        self.shell.canvas_mode.document.selection =
+                            SelectionTarget::ItemIds(selected_ids);
+                    }
 
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label("SVG path:");
-                ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.export_path);
-                if ui.button("Export SVG").clicked() {
-                    self.export_canvas_svg();
-                }
-            });
-            if !self.shell.canvas_mode.ui.export_status.is_empty() {
-                ui.label(&self.shell.canvas_mode.ui.export_status);
-            }
+                    self.render_canvas_export_guidance(ui);
 
-            ui.separator();
-            ui.horizontal(|ui| {
-                if ui.button("Apply recolor to selected PDF pages").clicked() {
-                    self.apply_recolor_to_selected_canvas_pdf_pages(true);
-                }
-                if ui.button("Clear recolor on selected PDF pages").clicked() {
-                    self.apply_recolor_to_selected_canvas_pdf_pages(false);
-                }
-            });
+                    ui.horizontal(|ui| {
+                        ui.label("SVG path:");
+                        ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.export_path);
+                        if ui.button("Export SVG").clicked() {
+                            self.export_canvas_svg();
+                        }
+                    });
+                    self.render_feedback_message(ui, &self.shell.canvas_mode.ui.export_status);
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Apply recolor to selected PDF pages").clicked() {
+                            self.apply_recolor_to_selected_canvas_pdf_pages(true);
+                        }
+                        if ui.button("Clear recolor on selected PDF pages").clicked() {
+                            self.apply_recolor_to_selected_canvas_pdf_pages(false);
+                        }
+                    });
+                });
         });
+    }
+
+    fn render_canvas_export_guidance(&self, ui: &mut egui::Ui) {
+        let selected_items = self.selected_canvas_items();
+        let target_items = if selected_items.is_empty() {
+            self.shell
+                .canvas_mode
+                .document
+                .items
+                .iter()
+                .collect::<Vec<_>>()
+        } else {
+            selected_items
+        };
+
+        if target_items.is_empty() {
+            self.render_status_banner(
+                ui,
+                BannerTone::Info,
+                "SVG export",
+                "Add strokes or text before exporting. SVG currently targets vector-only study notes.",
+            );
+            return;
+        }
+
+        if let Some(reason) = self
+            .services
+            .canvas_export
+            .first_incompatibility(&target_items)
+        {
+            let message = match reason {
+                crate::model::IncompatibleExportReason::RasterContent => {
+                    "Images are present in the current target. Select only strokes and text for SVG export."
+                }
+                crate::model::IncompatibleExportReason::ImportedPdfPage => {
+                    "Imported PDF pages are present in the current target. Keep them in the study canvas, but export only vector notes to SVG."
+                }
+                crate::model::IncompatibleExportReason::MixedUnsupportedSelection => {
+                    "The current selection mixes unsupported items. Narrow the selection to vector notes before exporting."
+                }
+            };
+            self.render_status_banner(ui, BannerTone::Warning, "SVG export", message);
+            return;
+        }
+
+        self.render_status_banner(
+            ui,
+            BannerTone::Success,
+            "SVG export",
+            "The current target is vector-compatible. Export will keep strokes and text portable.",
+        );
     }
 
     fn apply_canvas_zoom(&mut self, ui: &egui::Ui, response: &egui::Response) {
