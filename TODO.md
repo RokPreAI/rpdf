@@ -2,10 +2,18 @@
 
 ## Current TODOs
 
+- [ ] 1 Navigation add-space-pan-and-fit-to-content
+
 ## Active TODOs
+
+- [ ] 2 Canvas add-clipboard-image-paste-support
+- [ ] 2 Ui simplify-gui-and-tool-grouping
+- [ ] 2 Input add-keyboard-shortcuts-and-discoverability
 
 ## Done TODOs
 
+- [x] 1 Tools add-selection-and-eraser-tools
+- [x] 0 Pdf stabilize-pdf-open-path-and-crash-handling
 - [x] 3 Ux run-study-session-ux-hardening
 - [x] 2 Validation add-offline-acceptance-checks
 - [x] 1 Persistence add-save-load-and-recovery
@@ -481,3 +489,165 @@ Acceptance criteria:
 
 Notes:
 Keep this phase evidence-driven. Do not invent generic polish work before the acceptance checks and real-use pass expose concrete problems.
+
+### stabilize-pdf-open-path-and-crash-handling
+
+Priority: 0
+Area: Pdf
+Status: done
+Depends on: none
+
+Goal:
+Stop PDF opening from crashing the app and make failure states visible and recoverable instead of fatal.
+
+Context:
+The current backlog was completed, but the user has now reported a concrete runtime regression: opening a PDF crashes the program. This cuts directly across the document-focused core flow in `PLAN.md` Phase 4 and must be treated as the top priority before more interaction features are layered on top. Past work already added file-picker handling and warning-driven reading support, so this task should focus on the actual crash path around PDF opening, page counting, or follow-on session setup rather than broad feature work.
+
+Expected changes:
+- Reproduce the crash path when opening a PDF, including whether it depends on a specific file, picker path, missing display integration, or page-count/text-extraction logic.
+- Harden `src/app/pdf.rs` and any supporting service code so invalid PDFs, unexpected paths, or backend failures produce UI-visible status messages instead of panics or process termination.
+- Add or extend focused tests for any non-GUI logic that caused the crash, especially helper/service code involved in PDF open setup.
+- Update acceptance/reporting artifacts only if the failure mode changes how manual PDF validation should be run.
+
+Acceptance criteria:
+- Opening a PDF no longer crashes the app for the reproduced failure mode.
+- If PDF opening still cannot proceed for a specific bad input or environment case, the app reports a bounded error state in the UI instead of terminating.
+- The worker records how the crash was reproduced and what verification was run, or explicitly documents if full GUI reproduction remained blocked by environment limits.
+
+Notes:
+Test the environment/backend path first, then patch the code path that is actually failing. Do not mix this with selection, erasing, or shortcut work.
+
+### add-selection-and-eraser-tools
+
+Priority: 1
+Area: Tools
+Status: done
+Depends on: stabilize-pdf-open-path-and-crash-handling
+
+Goal:
+Add explicit selection and eraser tools so notes, drawings, and highlights can be selected, adjusted, or removed without relying only on creation-time behavior.
+
+Context:
+The current prototype supports drawing, highlighting, text notes, and imported content, but it does not yet expose a proper selection tool or eraser workflow. The user specifically wants selection to work across notes, drawings, and highlights, and wants an eraser tool as part of the main interaction model. This fits `PLAN.md` Phases 2 through 4 by tightening pen-first editing behavior in both Canvas Mode and PDF Mode.
+
+Expected changes:
+- Extend shared tool state in `src/app/mod.rs` to include selection and eraser modes alongside ink/highlighter.
+- Add selection behavior for canvas items and PDF annotations, with a clear first bounded version for what can be selected and how selection is shown.
+- Add an eraser workflow for strokes/highlights/notes or other supported annotations, with honest limits where partial erasing is not yet supported.
+- Update mode toolbars and any rendering helpers in `src/app/canvas.rs` and `src/app/pdf.rs` so the new tools are visible and usable.
+
+Acceptance criteria:
+- A user can enter a selection tool and select at least one existing note, drawing, or highlight in the supported modes.
+- A user can enter an eraser tool and remove supported content without switching to a non-editing workaround.
+- Tool behavior is explicit in the UI and does not silently reuse draw/highlight semantics.
+
+Notes:
+Prefer a coherent whole-item erase/select behavior first over a complex partial-vector editor. Be explicit about unsupported item types if needed.
+
+### add-space-pan-and-fit-to-content
+
+Priority: 1
+Area: Navigation
+Status: current
+Depends on: stabilize-pdf-open-path-and-crash-handling
+
+Goal:
+Add a spacebar-driven navigation model where holding space pans the infinite canvas and double-clicking space fits the current canvas content to the visible viewport.
+
+Context:
+The user wants the interaction model to feel more like a practical drawing or note-taking tool: space should temporarily switch into movement/navigation, and a double tap on space should center and fit canvas content into view. This directly supports the pen-first, low-friction navigation goals in `PLAN.md` Phases 2 and 7.
+
+Expected changes:
+- Add keyboard state handling for spacebar press/hold and double-tap timing.
+- Allow space-drag panning in Infinite Canvas Mode without conflicting with existing pen input and secondary-drag panning.
+- Implement a fit-to-content calculation that bounds current canvas items and resets viewport origin/zoom to show the working content cleanly.
+- Surface any minimal UI hint needed so the behavior is discoverable enough during normal use.
+
+Acceptance criteria:
+- Holding space enables a movement flow for the infinite canvas without drawing accidental marks.
+- Double-tapping space fits existing canvas content into the visible view when content exists.
+- Empty-canvas behavior is bounded and does not jump to invalid zoom or origin values.
+
+Notes:
+Keep this canvas-first unless PDF Mode can share the same navigation shortcut cleanly. Avoid mixing this task with the broader keyboard-shortcut pass beyond the specific space interaction.
+
+### add-clipboard-image-paste-support
+
+Priority: 2
+Area: Canvas
+Status: pending
+Depends on: add-selection-and-eraser-tools
+
+Goal:
+Allow the user to paste an image from the system clipboard directly into Infinite Canvas Mode.
+
+Context:
+The app already supports importing images from file paths, but the user now wants a lower-friction workflow where copied images can be pasted directly from the system clipboard. This fits the canvas mixed-content goals in `PLAN.md` Phase 3 and the low-friction study workflow goals in Phase 7. It should behave like a fast asset-ingest path, not a full clipboard-management feature.
+
+Expected changes:
+- Add a clipboard image read path using the GUI/runtime facilities already available in the app stack.
+- Convert clipboard image data into a bounded imported canvas image item with sane default placement and sizing behavior.
+- Expose the action through the normal canvas workflow, likely via paste shortcut handling and/or a visible import action.
+- Add graceful failure behavior when the clipboard is empty or does not currently contain image data.
+
+Acceptance criteria:
+- When the system clipboard contains an image, the user can paste it into Infinite Canvas Mode and see a new image item appear.
+- When the clipboard does not contain an image, the app reports a bounded no-image state instead of failing silently or crashing.
+- The new paste path coexists with existing file-based image import instead of replacing it.
+
+Notes:
+Keep the first version image-only. Do not expand this task into generic clipboard text, PDF, or multi-item paste support.
+
+### simplify-gui-and-tool-grouping
+
+Priority: 2
+Area: Ui
+Status: pending
+Depends on: add-selection-and-eraser-tools, add-space-pan-and-fit-to-content
+
+Goal:
+Simplify the GUI so the new and existing tools are easier to scan, with less clutter and clearer separation between content tools, navigation tools, file actions, and reading actions.
+
+Context:
+The earlier UX-hardening task improved grouping and feedback banners, but the user is asking for a broader simplification pass now that more editing tools are expected. This task should absorb the tool-surface impact of selection, eraser, space-pan behavior, and shortcuts rather than forcing those additions into the current layout ad hoc.
+
+Expected changes:
+- Rework toolbar and panel organization in `src/app/canvas.rs`, `src/app/pdf.rs`, and shared UI helpers so the primary study/editing flow is simpler.
+- Reduce always-visible clutter where collapses, grouping, or smaller defaults improve readability.
+- Make the current tool state and major mode actions easier to recognize quickly.
+- Update any small user-facing docs or helper text that become inaccurate after the simplification.
+
+Acceptance criteria:
+- The main GUI exposes the core tools with less clutter than the current layout.
+- Selection, eraser, navigation, and existing annotation actions have an obvious home in the simplified UI.
+- Simplification does not remove critical visibility for save/recovery, warnings, or reading support.
+
+Notes:
+This is not a design-system rewrite. Keep it as a focused simplification pass driven by the concrete control set the app now needs.
+
+### add-keyboard-shortcuts-and-discoverability
+
+Priority: 2
+Area: Input
+Status: pending
+Depends on: add-selection-and-eraser-tools, add-space-pan-and-fit-to-content, simplify-gui-and-tool-grouping
+
+Goal:
+Add keyboard shortcuts for the main study and editing actions, plus enough discoverability that the shortcuts are usable without reading the code.
+
+Context:
+The user explicitly wants keyboard shortcuts for most features. Once the current tool set and navigation model are stabilized, the shortcut layer should cover the core actions in both modes and make them visible somewhere in the UI or docs. This supports the keyboard-first and low-friction interaction goals in the plan without making shortcuts guesswork.
+
+Expected changes:
+- Define a first-pass shortcut map for major actions such as tool switching, save/load, movement, selection, erasing, mode switching, and PDF navigation where relevant.
+- Add key handling in the app update loop or mode handlers without causing accidental conflicts with text-entry fields.
+- Add a visible shortcut reference, tooltip surface, status hint, or small in-app cheat sheet so the bindings are discoverable.
+- Update `README.md` or another durable doc if shortcut coverage becomes part of the normal user workflow.
+
+Acceptance criteria:
+- Most commonly used actions have working keyboard shortcuts.
+- Shortcut handling does not break normal text-entry interactions.
+- The app exposes the shortcut map in at least one user-visible location instead of relying on hidden behavior.
+
+Notes:
+Prefer a small coherent shortcut set over trying to bind every possible command at once. Keep the mapping stable once introduced.

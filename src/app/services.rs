@@ -27,6 +27,11 @@ pub struct ReadingSupportResolution {
     pub warning: Option<UserVisibleWarning>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PdfOpenPreparation {
+    pub page_count: usize,
+}
+
 impl ReadingSupportService {
     pub fn pick_pdf_path(&self) -> Result<Option<String>, String> {
         util::pick_pdf_path()
@@ -34,6 +39,12 @@ impl ReadingSupportService {
 
     pub fn best_effort_pdf_page_count(&self, path: &str) -> usize {
         util::best_effort_pdf_page_count(path)
+    }
+
+    pub fn inspect_pdf_open_path(&self, path: &str) -> Result<PdfOpenPreparation, String> {
+        util::inspect_pdf_path(path).map(|inspection| PdfOpenPreparation {
+            page_count: inspection.page_count,
+        })
     }
 
     pub fn best_effort_extract_pdf_text(&self, path: &str) -> String {
@@ -425,8 +436,8 @@ fn current_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CanvasExportService, PersistenceService, TextQuality, current_unix_ms, native_text_quality,
-        normalize_extracted_text,
+        CanvasExportService, PersistenceService, ReadingSupportService, TextQuality,
+        current_unix_ms, native_text_quality, normalize_extracted_text,
     };
     use crate::model::{
         AnnotationAppearanceSet, AnnotationLayerRole, AnnotationVisibility, AutosaveState,
@@ -461,6 +472,36 @@ mod tests {
     fn marks_garbled_long_token_text_as_weak() {
         let text = "AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP syntheticcontentwithoutspaces repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken repeatedtoken";
         assert_eq!(native_text_quality(text), TextQuality::Weak);
+    }
+
+    #[test]
+    fn inspects_pdf_open_path_and_counts_pages() {
+        let service = ReadingSupportService;
+        let path = unique_test_path("inspect.pdf");
+        std::fs::write(
+            &path,
+            b"%PDF-1.4\n1 0 obj\n<< /Type /Page >>\nendobj\n2 0 obj\n<< /Type /Page >>\nendobj\n",
+        )
+        .expect("write sample pdf bytes");
+
+        let inspection = service.inspect_pdf_open_path(&path).expect("inspect pdf");
+        assert_eq!(inspection.page_count, 2);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_non_pdf_files_during_open_inspection() {
+        let service = ReadingSupportService;
+        let path = unique_test_path("not-a-pdf.bin");
+        std::fs::write(&path, b"plain text file").expect("write non pdf file");
+
+        let error = service
+            .inspect_pdf_open_path(&path)
+            .expect_err("non pdf should be rejected");
+        assert!(error.contains("does not look like a PDF"));
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

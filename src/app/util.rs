@@ -4,6 +4,12 @@ use crate::model::{
     HighlightMode, PenToolKind, Point, RgbaColor, StrokePoint, TextStyle,
 };
 use eframe::egui;
+use std::io::Read;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct PdfOpenInspection {
+    pub page_count: usize,
+}
 
 pub(super) fn accent_color() -> RgbaColor {
     RgbaColor {
@@ -93,19 +99,85 @@ pub(super) fn file_label(path: &std::path::Path) -> String {
 }
 
 pub(super) fn best_effort_pdf_page_count(path: &str) -> usize {
-    let Ok(bytes) = std::fs::read(path) else {
-        return 1;
-    };
-    let content = String::from_utf8_lossy(&bytes);
-    content.matches("/Type /Page").count().max(1)
+    inspect_pdf_path(path)
+        .map(|inspection| inspection.page_count)
+        .unwrap_or(1)
 }
 
 pub(super) fn pick_pdf_path() -> Result<Option<String>, String> {
-    Ok(rfd::FileDialog::new()
-        .add_filter("PDF files", &["pdf"])
-        .set_title("Open PDF")
-        .pick_file()
-        .map(|path| path.display().to_string()))
+    std::panic::catch_unwind(|| {
+        rfd::FileDialog::new()
+            .add_filter("PDF files", &["pdf"])
+            .set_title("Open PDF")
+            .pick_file()
+            .map(|path| path.display().to_string())
+    })
+    .map_err(|_| "PDF picker panicked before returning a file path.".to_string())
+}
+
+pub(super) fn inspect_pdf_path(path: &str) -> Result<PdfOpenInspection, String> {
+    let pdf_path = std::path::Path::new(path);
+    let metadata = std::fs::metadata(pdf_path)
+        .map_err(|error| format!("Could not read PDF path metadata: {error}"))?;
+
+    if !metadata.is_file() {
+        return Err("PDF path is not a regular file.".to_string());
+    }
+
+    if metadata.len() == 0 {
+        return Err("PDF file is empty.".to_string());
+    }
+
+    let mut file = std::fs::File::open(pdf_path)
+        .map_err(|error| format!("Could not open PDF file: {error}"))?;
+    let mut header = [0_u8; 1024];
+    let header_bytes = file
+        .read(&mut header)
+        .map_err(|error| format!("Could not read PDF header: {error}"))?;
+    if !header[..header_bytes]
+        .windows(5)
+        .any(|window| window == b"%PDF-")
+    {
+        return Err("Selected file does not look like a PDF.".to_string());
+    }
+
+    Ok(PdfOpenInspection {
+        page_count: count_pdf_page_markers(pdf_path).unwrap_or(1).max(1),
+    })
+}
+
+fn count_pdf_page_markers(path: &std::path::Path) -> Result<usize, String> {
+    const PATTERN: &[u8] = b"/Type /Page";
+
+    let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut carried = Vec::new();
+    let mut count = 0_usize;
+
+    loop {
+        let read_bytes = reader
+            .read(&mut buffer)
+            .map_err(|error| error.to_string())?;
+        if read_bytes == 0 {
+            break;
+        }
+
+        let mut chunk = Vec::with_capacity(carried.len() + read_bytes);
+        chunk.extend_from_slice(&carried);
+        chunk.extend_from_slice(&buffer[..read_bytes]);
+
+        count += chunk
+            .windows(PATTERN.len())
+            .filter(|window| *window == PATTERN)
+            .count();
+
+        let carry_len = PATTERN.len().saturating_sub(1).min(chunk.len());
+        carried.clear();
+        carried.extend_from_slice(&chunk[chunk.len() - carry_len..]);
+    }
+
+    Ok(count)
 }
 
 pub(super) fn centered_page_rect(rect: egui::Rect, zoom: f32) -> egui::Rect {
@@ -210,6 +282,7 @@ pub(super) fn preview_brush(tool: AnnotationTool) -> BrushStyle {
             blue: 10,
             alpha: 150,
         },
+        AnnotationTool::Selection | AnnotationTool::Eraser => accent_color(),
     };
 
     BrushStyle {
@@ -225,8 +298,49 @@ pub(super) fn preview_brush(tool: AnnotationTool) -> BrushStyle {
         tool: match tool {
             AnnotationTool::Ink => PenToolKind::Ink,
             AnnotationTool::Highlighter => PenToolKind::Highlighter,
+            AnnotationTool::Selection | AnnotationTool::Eraser => PenToolKind::Ink,
         },
     }
+}
+
+pub(super) fn point_in_rect(point: Point, rect: crate::model::Rect) -> bool {
+    point.x >= rect.origin.x
+        && point.x <= rect.origin.x + rect.size.width
+        && point.y >= rect.origin.y
+        && point.y <= rect.origin.y + rect.size.height
+}
+
+pub(super) fn stroke_hit_test(points: &[StrokePoint], point: Point, tolerance: f32) -> bool {
+    if points.len() < 2 {
+        return false;
+    }
+
+    points.windows(2).any(|segment| {
+        distance_to_segment(point, segment[0].position, segment[1].position) <= tolerance
+    })
+}
+
+pub(super) fn stroke_bounds(points: &[StrokePoint]) -> Option<crate::model::Rect> {
+    let first = points.first()?;
+    let mut min_x = first.position.x;
+    let mut min_y = first.position.y;
+    let mut max_x = first.position.x;
+    let mut max_y = first.position.y;
+
+    for point in points.iter().skip(1) {
+        min_x = min_x.min(point.position.x);
+        min_y = min_y.min(point.position.y);
+        max_x = max_x.max(point.position.x);
+        max_y = max_y.max(point.position.y);
+    }
+
+    Some(crate::model::Rect {
+        origin: Point { x: min_x, y: min_y },
+        size: crate::model::Size {
+            width: (max_x - min_x).max(1.0),
+            height: (max_y - min_y).max(1.0),
+        },
+    })
 }
 
 pub(super) fn default_recolor_profile() -> crate::model::RecolorProfile {
@@ -342,4 +456,23 @@ fn escape_svg_text(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+fn distance_to_segment(point: Point, start: Point, end: Point) -> f32 {
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let length_squared = dx * dx + dy * dy;
+
+    if length_squared <= f32::EPSILON {
+        return ((point.x - start.x).powi(2) + (point.y - start.y).powi(2)).sqrt();
+    }
+
+    let t = (((point.x - start.x) * dx) + ((point.y - start.y) * dy)) / length_squared;
+    let t = t.clamp(0.0, 1.0);
+    let projection = Point {
+        x: start.x + t * dx,
+        y: start.y + t * dy,
+    };
+
+    ((point.x - projection.x).powi(2) + (point.y - projection.y).powi(2)).sqrt()
 }

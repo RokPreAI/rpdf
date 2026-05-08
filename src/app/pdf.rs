@@ -1,6 +1,7 @@
 use super::util::{
     centered_page_rect, default_recolor_profile, file_label, from_color32, note_text_style,
-    pdf_page_to_screen, preview_brush, render_palette_editor, screen_to_pdf_page, to_color32,
+    pdf_page_to_screen, point_in_rect, preview_brush, render_palette_editor, screen_to_pdf_page,
+    stroke_bounds, stroke_hit_test, to_color32,
 };
 use super::*;
 impl RpdfApp {
@@ -68,6 +69,7 @@ impl RpdfApp {
         );
         self.paint_pdf_reading_highlight(&painter, page_rect);
         self.paint_pdf_annotations(&painter, page_rect);
+        self.paint_pdf_selection(&painter, page_rect);
         self.paint_pdf_active_stroke(&painter, page_rect);
     }
 
@@ -320,6 +322,34 @@ impl RpdfApp {
     }
 
     fn handle_pdf_drawing(&mut self, ui: &egui::Ui, page_rect: egui::Rect) {
+        match self.shell.shared_ui.annotation_tools.current_tool {
+            AnnotationTool::Selection => {
+                self.shell.pdf_mode.ui.active_stroke = None;
+                if let Some(screen_pos) = ui
+                    .input(|input| input.pointer.interact_pos())
+                    .filter(|pos| page_rect.contains(*pos))
+                    && ui.input(|input| input.pointer.button_clicked(egui::PointerButton::Primary))
+                {
+                    let page_point = screen_to_pdf_page(page_rect, screen_pos);
+                    self.select_pdf_annotation_at(page_point);
+                }
+                return;
+            }
+            AnnotationTool::Eraser => {
+                self.shell.pdf_mode.ui.active_stroke = None;
+                if let Some(screen_pos) = ui
+                    .input(|input| input.pointer.interact_pos())
+                    .filter(|pos| page_rect.contains(*pos))
+                    && ui.input(|input| input.pointer.button_clicked(egui::PointerButton::Primary))
+                {
+                    let page_point = screen_to_pdf_page(page_rect, screen_pos);
+                    self.erase_pdf_annotation_at(page_point);
+                }
+                return;
+            }
+            AnnotationTool::Ink | AnnotationTool::Highlighter => {}
+        }
+
         let pointer_pos = ui.input(|input| input.pointer.interact_pos());
         let primary_down = ui.input(|input| input.pointer.primary_down());
 
@@ -344,6 +374,14 @@ impl RpdfApp {
     }
 
     fn commit_pdf_stroke(&mut self) {
+        if !matches!(
+            self.shell.shared_ui.annotation_tools.current_tool,
+            AnnotationTool::Ink | AnnotationTool::Highlighter
+        ) {
+            self.shell.pdf_mode.ui.active_stroke = None;
+            return;
+        }
+
         let Some(active_stroke) = self.shell.pdf_mode.ui.active_stroke.take() else {
             return;
         };
@@ -355,13 +393,14 @@ impl RpdfApp {
         let id = self.next_pdf_annotation_id();
         let tool = self.shell.shared_ui.annotation_tools.current_tool;
 
+        let annotation_id = format!("pdf-stroke-{id}");
         self.shell
             .pdf_mode
             .session
             .annotations
             .push(crate::model::PdfAnnotation::PenStroke(
                 PdfPenStrokeAnnotation {
-                    annotation_id: format!("pdf-stroke-{id}"),
+                    annotation_id: annotation_id.clone(),
                     page_index: self.shell.pdf_mode.session.viewport.page_index,
                     stroke: PenStrokeItem {
                         item_id: format!("pdf-stroke-item-{id}"),
@@ -371,6 +410,7 @@ impl RpdfApp {
                     },
                 },
             ));
+        self.shell.pdf_mode.ui.selected_annotation_id = Some(annotation_id);
         self.mark_pdf_dirty();
     }
 
@@ -419,6 +459,64 @@ impl RpdfApp {
         );
     }
 
+    fn paint_pdf_selection(&self, painter: &egui::Painter, page_rect: egui::Rect) {
+        let Some(selected_id) = &self.shell.pdf_mode.ui.selected_annotation_id else {
+            return;
+        };
+
+        for annotation in &self.shell.pdf_mode.session.annotations {
+            match annotation {
+                crate::model::PdfAnnotation::PenStroke(stroke)
+                    if &stroke.annotation_id == selected_id
+                        && stroke.page_index == self.shell.pdf_mode.session.viewport.page_index =>
+                {
+                    let Some(bounds) = stroke_bounds(&stroke.stroke.points) else {
+                        continue;
+                    };
+                    self.paint_pdf_selection_rect(
+                        painter,
+                        page_rect,
+                        Rect {
+                            origin: Point {
+                                x: bounds.origin.x - 10.0,
+                                y: bounds.origin.y - 10.0,
+                            },
+                            size: Size {
+                                width: bounds.size.width + 20.0,
+                                height: bounds.size.height + 20.0,
+                            },
+                        },
+                    );
+                }
+                crate::model::PdfAnnotation::TextNote(note)
+                    if &note.note_id == selected_id
+                        && note.page_index == self.shell.pdf_mode.session.viewport.page_index =>
+                {
+                    self.paint_pdf_selection_rect(painter, page_rect, note.anchor);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn paint_pdf_selection_rect(
+        &self,
+        painter: &egui::Painter,
+        page_rect: egui::Rect,
+        bounds: Rect,
+    ) {
+        let selection_rect = egui::Rect::from_min_size(
+            pdf_page_to_screen(page_rect, bounds.origin),
+            egui::vec2(bounds.size.width, bounds.size.height),
+        );
+        painter.rect_stroke(
+            selection_rect.expand(6.0),
+            8.0,
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(126, 159, 255)),
+            egui::StrokeKind::Middle,
+        );
+    }
+
     fn paint_pdf_stroke(
         &self,
         painter: &egui::Painter,
@@ -464,15 +562,20 @@ impl RpdfApp {
             return;
         }
 
+        let open_preparation = match self.services.reading_support.inspect_pdf_open_path(&path) {
+            Ok(preparation) => preparation,
+            Err(error) => {
+                self.shell.pdf_mode.ui.status_message = format!("PDF open failed: {error}");
+                return;
+            }
+        };
+
         self.shell.pdf_mode.session.source = PdfSource::FilePath(path.clone().into());
         self.shell.pdf_mode.session.metadata.title = Some(file_label(pdf_path));
         self.shell.pdf_mode.session.viewport.page_index = 0;
         self.shell.pdf_mode.session.viewport.scroll_offset = Point { x: 0.0, y: 0.0 };
-        self.shell.pdf_mode.ui.page_count = self
-            .services
-            .reading_support
-            .best_effort_pdf_page_count(&path)
-            .max(1);
+        self.shell.pdf_mode.ui.page_count = open_preparation.page_count.max(1);
+        self.shell.pdf_mode.ui.selected_annotation_id = None;
         self.shell.pdf_mode.ui.document_path = path.clone();
         self.stop_pdf_tts();
         self.shell.pdf_mode.session.reading_support.text_source = TextSupportSource::Unavailable;
@@ -531,6 +634,7 @@ impl RpdfApp {
             .annotation_tools
             .pending_note_text
             .clear();
+        self.shell.pdf_mode.ui.selected_annotation_id = Some(format!("pdf-note-{id}"));
     }
 
     fn next_pdf_annotation_id(&mut self) -> u64 {
@@ -745,6 +849,7 @@ impl RpdfApp {
                 };
                 self.shell.pdf_mode.session = session;
                 self.shell.pdf_mode.ui.active_stroke = None;
+                self.shell.pdf_mode.ui.selected_annotation_id = None;
                 self.shell.pdf_mode.ui.reading_session = None;
                 self.shell.pdf_mode.ui.status_message = format!("Loaded PDF session from {path}");
             }
@@ -770,6 +875,7 @@ impl RpdfApp {
                 };
                 self.shell.pdf_mode.session = session;
                 self.shell.pdf_mode.ui.active_stroke = None;
+                self.shell.pdf_mode.ui.selected_annotation_id = None;
                 self.shell.pdf_mode.ui.reading_session = None;
                 self.shell.pdf_mode.ui.status_message =
                     "Recovered latest PDF autosave snapshot.".to_string();
@@ -782,5 +888,79 @@ impl RpdfApp {
                 self.shell.pdf_mode.ui.status_message = format!("PDF recovery failed: {error}");
             }
         }
+    }
+
+    fn select_pdf_annotation_at(&mut self, point: Point) {
+        let selected = self.hit_test_pdf_annotation_id(point);
+        self.shell.pdf_mode.ui.selected_annotation_id = selected.clone();
+        self.shell.pdf_mode.ui.status_message = match selected {
+            Some(annotation_id) => format!("Selected PDF annotation {annotation_id}."),
+            None => "PDF annotation selection cleared.".to_string(),
+        };
+    }
+
+    fn erase_pdf_annotation_at(&mut self, point: Point) {
+        let Some(annotation_id) = self.hit_test_pdf_annotation_id(point) else {
+            self.shell.pdf_mode.ui.status_message =
+                "Eraser did not hit a supported PDF annotation.".to_string();
+            return;
+        };
+
+        let previous_len = self.shell.pdf_mode.session.annotations.len();
+        self.shell
+            .pdf_mode
+            .session
+            .annotations
+            .retain(|annotation| pdf_annotation_id(annotation) != annotation_id);
+
+        if self.shell.pdf_mode.session.annotations.len() != previous_len {
+            self.mark_pdf_dirty();
+            self.shell.pdf_mode.ui.selected_annotation_id = None;
+            self.shell.pdf_mode.ui.status_message =
+                format!("Erased PDF annotation {annotation_id}.");
+        }
+    }
+
+    fn hit_test_pdf_annotation_id(&self, point: Point) -> Option<String> {
+        self.shell
+            .pdf_mode
+            .session
+            .annotations
+            .iter()
+            .rev()
+            .filter(|annotation| {
+                pdf_annotation_page(annotation) == self.shell.pdf_mode.session.viewport.page_index
+            })
+            .find(|annotation| self.pdf_annotation_contains_point(annotation, point))
+            .map(|annotation| pdf_annotation_id(annotation).to_string())
+    }
+
+    fn pdf_annotation_contains_point(
+        &self,
+        annotation: &crate::model::PdfAnnotation,
+        point: Point,
+    ) -> bool {
+        match annotation {
+            crate::model::PdfAnnotation::PenStroke(stroke) => stroke_hit_test(
+                &stroke.stroke.points,
+                point,
+                stroke.stroke.brush.width.max(8.0),
+            ),
+            crate::model::PdfAnnotation::TextNote(note) => point_in_rect(point, note.anchor),
+        }
+    }
+}
+
+fn pdf_annotation_page(annotation: &crate::model::PdfAnnotation) -> usize {
+    match annotation {
+        crate::model::PdfAnnotation::PenStroke(stroke) => stroke.page_index,
+        crate::model::PdfAnnotation::TextNote(note) => note.page_index,
+    }
+}
+
+fn pdf_annotation_id(annotation: &crate::model::PdfAnnotation) -> &str {
+    match annotation {
+        crate::model::PdfAnnotation::PenStroke(stroke) => &stroke.annotation_id,
+        crate::model::PdfAnnotation::TextNote(note) => &note.note_id,
     }
 }

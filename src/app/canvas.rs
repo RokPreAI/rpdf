@@ -1,6 +1,7 @@
 use super::util::{
     accent_color, canvas_item_id, default_background_style, default_recolor_profile, file_label,
-    item_kind_label, latest_pressure, note_text_style, push_stroke_point, to_color32,
+    item_kind_label, latest_pressure, note_text_style, point_in_rect, push_stroke_point,
+    stroke_bounds, stroke_hit_test, to_color32,
 };
 use super::*;
 
@@ -49,6 +50,7 @@ impl RpdfApp {
         self.paint_imported_items(&painter, canvas_rect);
         self.paint_text_items(&painter, canvas_rect);
         self.paint_existing_strokes(&painter, canvas_rect);
+        self.paint_canvas_selection(&painter, canvas_rect);
         self.paint_active_stroke(&painter, canvas_rect);
     }
 
@@ -306,6 +308,30 @@ impl RpdfApp {
     }
 
     fn handle_canvas_drawing(&mut self, ui: &egui::Ui, response: &egui::Response) {
+        match self.shell.shared_ui.annotation_tools.current_tool {
+            AnnotationTool::Selection => {
+                self.shell.canvas_mode.ui.active_stroke = None;
+                if response.clicked_by(egui::PointerButton::Primary)
+                    && let Some(screen_pos) = response.interact_pointer_pos()
+                {
+                    let canvas_point = self.screen_to_canvas(response.rect, screen_pos);
+                    self.select_canvas_item_at(canvas_point);
+                }
+                return;
+            }
+            AnnotationTool::Eraser => {
+                self.shell.canvas_mode.ui.active_stroke = None;
+                if response.clicked_by(egui::PointerButton::Primary)
+                    && let Some(screen_pos) = response.interact_pointer_pos()
+                {
+                    let canvas_point = self.screen_to_canvas(response.rect, screen_pos);
+                    self.erase_canvas_item_at(canvas_point);
+                }
+                return;
+            }
+            AnnotationTool::Ink | AnnotationTool::Highlighter => {}
+        }
+
         let pointer_pos = ui.input(|input| input.pointer.interact_pos());
         let primary_down = ui.input(|input| input.pointer.primary_down());
 
@@ -332,6 +358,14 @@ impl RpdfApp {
     }
 
     fn commit_active_stroke(&mut self) {
+        if !matches!(
+            self.shell.shared_ui.annotation_tools.current_tool,
+            AnnotationTool::Ink | AnnotationTool::Highlighter
+        ) {
+            self.shell.canvas_mode.ui.active_stroke = None;
+            return;
+        }
+
         let Some(active_stroke) = self.shell.canvas_mode.ui.active_stroke.take() else {
             return;
         };
@@ -350,6 +384,7 @@ impl RpdfApp {
                 blue: 10,
                 alpha: 150,
             },
+            AnnotationTool::Selection | AnnotationTool::Eraser => return,
         };
 
         self.shell
@@ -372,6 +407,7 @@ impl RpdfApp {
                     tool: match tool {
                         AnnotationTool::Ink => PenToolKind::Ink,
                         AnnotationTool::Highlighter => PenToolKind::Highlighter,
+                        AnnotationTool::Selection | AnnotationTool::Eraser => return,
                     },
                 },
                 layer_role: AnnotationLayerRole::CanvasMarkup,
@@ -515,6 +551,64 @@ impl RpdfApp {
         };
 
         self.paint_stroke(painter, rect, &stroke.points, 4.0, accent_color());
+    }
+
+    fn paint_canvas_selection(&self, painter: &egui::Painter, rect: egui::Rect) {
+        let SelectionTarget::ItemIds(ids) = &self.shell.canvas_mode.document.selection else {
+            return;
+        };
+
+        for item in &self.shell.canvas_mode.document.items {
+            if !ids.iter().any(|id| id == canvas_item_id(item)) {
+                continue;
+            }
+
+            match item {
+                CanvasItem::PenStroke(stroke) => {
+                    let Some(bounds) = stroke_bounds(&stroke.points) else {
+                        continue;
+                    };
+                    let selection_rect = self.world_rect_to_screen(
+                        rect,
+                        egui::Rect::from_min_size(
+                            egui::pos2(bounds.origin.x - 10.0, bounds.origin.y - 10.0),
+                            egui::vec2(bounds.size.width + 20.0, bounds.size.height + 20.0),
+                        ),
+                    );
+                    painter.rect_stroke(
+                        selection_rect,
+                        8.0,
+                        egui::Stroke::new(2.0, egui::Color32::from_rgb(126, 159, 255)),
+                        egui::StrokeKind::Middle,
+                    );
+                }
+                CanvasItem::Text(text) => {
+                    self.paint_canvas_selection_rect(painter, rect, text.bounds)
+                }
+                CanvasItem::ImportedImage(image) => {
+                    self.paint_canvas_selection_rect(painter, rect, image.bounds)
+                }
+                CanvasItem::ImportedPdfPage(page) => {
+                    self.paint_canvas_selection_rect(painter, rect, page.bounds)
+                }
+            }
+        }
+    }
+
+    fn paint_canvas_selection_rect(&self, painter: &egui::Painter, rect: egui::Rect, bounds: Rect) {
+        let selection_rect = self.world_rect_to_screen(
+            rect,
+            egui::Rect::from_min_size(
+                egui::pos2(bounds.origin.x, bounds.origin.y),
+                egui::vec2(bounds.size.width, bounds.size.height),
+            ),
+        );
+        painter.rect_stroke(
+            selection_rect.expand(6.0),
+            8.0,
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(126, 159, 255)),
+            egui::StrokeKind::Middle,
+        );
     }
 
     fn paint_stroke(
@@ -917,6 +1011,61 @@ impl RpdfApp {
                 .filter(|item| ids.iter().any(|id| id == canvas_item_id(item)))
                 .collect(),
             _ => Vec::new(),
+        }
+    }
+
+    fn select_canvas_item_at(&mut self, point: Point) {
+        let selected = self.hit_test_canvas_item_id(point);
+        self.shell.canvas_mode.document.selection = match &selected {
+            Some(item_id) => SelectionTarget::ItemIds(vec![item_id.clone()]),
+            None => SelectionTarget::None,
+        };
+        self.shell.canvas_mode.ui.save_status = match selected.as_deref() {
+            Some(item_id) => format!("Selected canvas item {item_id}."),
+            None => "Canvas selection cleared.".to_string(),
+        };
+    }
+
+    fn erase_canvas_item_at(&mut self, point: Point) {
+        let Some(item_id) = self.hit_test_canvas_item_id(point) else {
+            self.shell.canvas_mode.ui.save_status =
+                "Eraser did not hit a supported canvas item.".to_string();
+            return;
+        };
+
+        let previous_len = self.shell.canvas_mode.document.items.len();
+        self.shell
+            .canvas_mode
+            .document
+            .items
+            .retain(|item| canvas_item_id(item) != item_id);
+
+        if self.shell.canvas_mode.document.items.len() != previous_len {
+            self.mark_canvas_dirty();
+            self.shell.canvas_mode.document.selection = SelectionTarget::None;
+            self.shell.canvas_mode.ui.save_status = format!("Erased canvas item {item_id}.");
+        }
+    }
+
+    fn hit_test_canvas_item_id(&self, point: Point) -> Option<String> {
+        self.shell
+            .canvas_mode
+            .document
+            .items
+            .iter()
+            .rev()
+            .find(|item| self.canvas_item_contains_point(item, point))
+            .map(|item| canvas_item_id(item).to_string())
+    }
+
+    fn canvas_item_contains_point(&self, item: &CanvasItem, point: Point) -> bool {
+        match item {
+            CanvasItem::PenStroke(stroke) => {
+                stroke_hit_test(&stroke.points, point, stroke.brush.width.max(8.0))
+            }
+            CanvasItem::Text(text) => point_in_rect(point, text.bounds),
+            CanvasItem::ImportedImage(image) => point_in_rect(point, image.bounds),
+            CanvasItem::ImportedPdfPage(page) => point_in_rect(point, page.bounds),
         }
     }
 

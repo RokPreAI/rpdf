@@ -204,6 +204,16 @@ impl RpdfApp {
                     AnnotationTool::Highlighter,
                     "Highlighter",
                 );
+                ui.selectable_value(
+                    &mut self.shell.shared_ui.annotation_tools.current_tool,
+                    AnnotationTool::Selection,
+                    "Selection",
+                );
+                ui.selectable_value(
+                    &mut self.shell.shared_ui.annotation_tools.current_tool,
+                    AnnotationTool::Eraser,
+                    "Eraser",
+                );
             });
 
             ui.horizontal(|ui| {
@@ -411,6 +421,7 @@ pub struct PdfInteractionState {
     pub status_message: String,
     pub page_count: usize,
     pub active_stroke: Option<PendingStroke>,
+    pub selected_annotation_id: Option<String>,
     pub next_annotation_id: u64,
     pub reading_session: Option<ReadingPlaybackSession>,
     pub last_autosave_unix_ms: u64,
@@ -424,6 +435,7 @@ impl Default for PdfInteractionState {
             status_message: String::new(),
             page_count: 1,
             active_stroke: None,
+            selected_annotation_id: None,
             next_annotation_id: 0,
             reading_session: None,
             last_autosave_unix_ms: 0,
@@ -442,6 +454,8 @@ pub struct ReadingPlaybackSession {
 pub enum AnnotationTool {
     Ink,
     Highlighter,
+    Selection,
+    Eraser,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
