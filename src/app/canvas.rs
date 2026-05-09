@@ -10,7 +10,7 @@ impl RpdfApp {
         self.handle_canvas_clipboard_shortcuts(ui);
 
         ui.heading("Infinite Canvas Mode");
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("Primary drag: draw");
             ui.separator();
             ui.label("Secondary drag or hold Space + drag: pan");
@@ -62,11 +62,13 @@ impl RpdfApp {
     }
 
     fn render_canvas_toolbar(&mut self, ui: &mut egui::Ui) {
-        ui.group(|ui| {
-            egui::CollapsingHeader::new("Files and recovery")
-                .default_open(true)
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            Self::render_section_card(
+                ui,
+                "Session",
+                "Save or recover the editable canvas state.",
+                |ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label("Save path:");
                         ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.document_path);
                         if ui.button("Save canvas").clicked() {
@@ -86,11 +88,14 @@ impl RpdfApp {
                         }
                     });
                     self.render_feedback_message(ui, &self.shell.canvas_mode.ui.save_status);
-                });
+                },
+            );
 
-            egui::CollapsingHeader::new("Canvas content")
-                .default_open(true)
-                .show(ui, |ui| {
+            Self::render_section_card(
+                ui,
+                "Add content",
+                "Keep the common add actions visible and fold detailed inputs underneath.",
+                |ui| {
                     ui.horizontal_wrapped(|ui| {
                         ui.label("Background:");
                         if ui
@@ -137,44 +142,62 @@ impl RpdfApp {
                         }
                     });
 
-                    ui.horizontal(|ui| {
-                        ui.label("Text:");
-                        ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_text);
-                        if ui.button("Add text").clicked() {
-                            self.add_canvas_text();
-                        }
+                    ui.collapsing("Text note", |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Text:");
+                            ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_text);
+                            if ui.button("Add text").clicked() {
+                                self.add_canvas_text();
+                            }
+                        });
                     });
 
-                    ui.horizontal(|ui| {
-                        ui.label("Image path:");
-                        ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_image_path);
-                        if ui.button("Import image").clicked() {
-                            self.import_canvas_image();
-                        }
-                        if ui.button("Paste clipboard image").clicked() {
-                            self.paste_canvas_image_from_clipboard();
-                        }
+                    ui.collapsing("Image reference", |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label("Image path:");
+                            ui.text_edit_singleline(
+                                &mut self.shell.canvas_mode.ui.pending_image_path,
+                            );
+                            if ui.button("Import image").clicked() {
+                                self.import_canvas_image();
+                            }
+                            if ui.button("Paste clipboard image").clicked() {
+                                self.paste_canvas_image_from_clipboard();
+                            }
+                        });
                     });
 
-                    ui.horizontal(|ui| {
-                        ui.label("PDF path:");
-                        ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_pdf_path);
-                        ui.label("Page:");
-                        ui.add(
-                            egui::DragValue::new(&mut self.shell.canvas_mode.ui.pending_pdf_page)
+                    ui.collapsing("PDF page reference", |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label("PDF path:");
+                            ui.text_edit_singleline(
+                                &mut self.shell.canvas_mode.ui.pending_pdf_path,
+                            );
+                            ui.label("Page:");
+                            ui.add(
+                                egui::DragValue::new(
+                                    &mut self.shell.canvas_mode.ui.pending_pdf_page,
+                                )
                                 .range(1..=9999),
-                        );
-                        if ui.button("Import page").clicked() {
-                            self.import_canvas_pdf_page();
-                        }
+                            );
+                            if ui.button("Import page").clicked() {
+                                self.import_canvas_pdf_page();
+                            }
+                        });
                     });
-                });
+                },
+            );
 
-            egui::CollapsingHeader::new("Selection and export")
-                .default_open(true)
-                .show(ui, |ui| {
-                    ui.label("Selection:");
-                    ui.horizontal(|ui| {
+            Self::render_section_card(
+                ui,
+                "Selection and export",
+                "Selection, export targeting, and PDF-page recolor controls live together here.",
+                |ui| {
+                    ui.label(format!(
+                        "Current target: {}",
+                        self.canvas_selection_summary()
+                    ));
+                    ui.horizontal_wrapped(|ui| {
                         if ui.button("Whole canvas").clicked() {
                             self.shell.canvas_mode.document.selection =
                                 SelectionTarget::WholeCanvas;
@@ -191,23 +214,29 @@ impl RpdfApp {
                     };
                     let mut selected_ids = current_ids;
 
-                    for item in &self.shell.canvas_mode.document.items {
-                        let item_id = canvas_item_id(item).to_string();
-                        let mut selected = selected_ids.iter().any(|id| id == &item_id);
-                        if ui
-                            .checkbox(
-                                &mut selected,
-                                format!("{} ({})", item_id, item_kind_label(item)),
-                            )
-                            .changed()
-                        {
-                            if selected {
-                                selected_ids.push(item_id.clone());
-                            } else {
-                                selected_ids.retain(|id| id != &item_id);
+                    ui.collapsing("Manual item target", |ui| {
+                        if self.shell.canvas_mode.document.items.is_empty() {
+                            ui.label("No canvas items exist yet.");
+                        }
+
+                        for item in &self.shell.canvas_mode.document.items {
+                            let item_id = canvas_item_id(item).to_string();
+                            let mut selected = selected_ids.iter().any(|id| id == &item_id);
+                            if ui
+                                .checkbox(
+                                    &mut selected,
+                                    format!("{} ({})", item_id, item_kind_label(item)),
+                                )
+                                .changed()
+                            {
+                                if selected {
+                                    selected_ids.push(item_id.clone());
+                                } else {
+                                    selected_ids.retain(|id| id != &item_id);
+                                }
                             }
                         }
-                    }
+                    });
 
                     if !selected_ids.is_empty() {
                         selected_ids.sort();
@@ -227,15 +256,18 @@ impl RpdfApp {
                     });
                     self.render_feedback_message(ui, &self.shell.canvas_mode.ui.export_status);
 
-                    ui.horizontal(|ui| {
-                        if ui.button("Apply recolor to selected PDF pages").clicked() {
-                            self.apply_recolor_to_selected_canvas_pdf_pages(true);
-                        }
-                        if ui.button("Clear recolor on selected PDF pages").clicked() {
-                            self.apply_recolor_to_selected_canvas_pdf_pages(false);
-                        }
+                    ui.collapsing("PDF page recolor", |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.button("Apply recolor to selected PDF pages").clicked() {
+                                self.apply_recolor_to_selected_canvas_pdf_pages(true);
+                            }
+                            if ui.button("Clear recolor on selected PDF pages").clicked() {
+                                self.apply_recolor_to_selected_canvas_pdf_pages(false);
+                            }
+                        });
                     });
-                });
+                },
+            );
         });
     }
 

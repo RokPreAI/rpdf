@@ -2,14 +2,15 @@
 
 ## Current TODOs
 
-- [ ] 2 Ui simplify-gui-and-tool-grouping
+- [ ] 2 Input add-keyboard-shortcuts-and-discoverability
 
 ## Active TODOs
 
-- [ ] 2 Input add-keyboard-shortcuts-and-discoverability
+- None
 
 ## Done TODOs
 
+- [x] 2 Ui simplify-gui-and-tool-grouping
 - [x] 2 Canvas add-clipboard-image-paste-support
 - [x] 1 Navigation add-space-pan-and-fit-to-content
 - [x] 1 Tools add-selection-and-eraser-tools
@@ -602,7 +603,7 @@ Keep the first version image-only. Do not expand this task into generic clipboar
 
 Priority: 2
 Area: Ui
-Status: current
+Status: done
 Depends on: add-selection-and-eraser-tools, add-space-pan-and-fit-to-content
 
 Goal:
@@ -629,7 +630,7 @@ This is not a design-system rewrite. Keep it as a focused simplification pass dr
 
 Priority: 2
 Area: Input
-Status: pending
+Status: current
 Depends on: add-selection-and-eraser-tools, add-space-pan-and-fit-to-content, simplify-gui-and-tool-grouping
 
 Goal:

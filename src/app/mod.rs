@@ -40,10 +40,10 @@ impl eframe::App for RpdfApp {
         self.tick_autosave();
 
         egui::TopBottomPanel::top("mode_switcher").show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.heading("rpdf");
                 ui.separator();
-                ui.label("Workspace:");
+                ui.label("Mode");
                 ui.selectable_value(
                     &mut self.shell.mode,
                     WorkspaceMode::InfiniteCanvas,
@@ -51,21 +51,23 @@ impl eframe::App for RpdfApp {
                 );
                 ui.selectable_value(&mut self.shell.mode, WorkspaceMode::PdfDocument, "PDF Mode");
                 ui.separator();
-                ui.label(format!("Offline startup: {}", self.startup.offline_ready));
+                ui.label(format!("Tool: {}", self.current_tool_label()));
+                ui.separator();
+                ui.label(format!("Offline: {}", self.startup.offline_ready));
             });
         });
 
         egui::SidePanel::left("session_summary")
             .resizable(false)
-            .default_width(220.0)
+            .default_width(200.0)
             .show(ctx, |ui| {
-                ui.heading("Session");
-                ui.label(format!("Default mode: {:?}", self.startup.default_mode));
+                ui.heading("Workspace");
+                ui.label(format!("Current: {}", self.current_mode_label()));
                 ui.label(format!(
-                    "Last opened path: {}",
+                    "Last file: {}",
                     self.startup.last_opened_path.as_deref().unwrap_or("none")
                 ));
-                ui.separator();
+                ui.add_space(6.0);
 
                 match self.shell.mode {
                     WorkspaceMode::InfiniteCanvas => self.render_canvas_summary(ui),
@@ -82,118 +84,136 @@ impl eframe::App for RpdfApp {
 
 impl RpdfApp {
     fn render_canvas_summary(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Canvas Root");
-        ui.label(
-            self.shell
-                .canvas_mode
-                .document
-                .metadata
-                .title
-                .as_deref()
-                .unwrap_or("Untitled canvas"),
+        Self::render_section_card(
+            ui,
+            "Canvas",
+            "A compact view of the current study board.",
+            |ui| {
+                Self::render_summary_kv(
+                    ui,
+                    "Title",
+                    self.shell
+                        .canvas_mode
+                        .document
+                        .metadata
+                        .title
+                        .as_deref()
+                        .unwrap_or("Untitled canvas"),
+                );
+                Self::render_summary_kv(
+                    ui,
+                    "Items",
+                    &self.shell.canvas_mode.document.items.len().to_string(),
+                );
+                Self::render_summary_kv(ui, "Tool", self.current_tool_label());
+                Self::render_summary_kv(ui, "Selection", &self.canvas_selection_summary());
+                Self::render_summary_kv(
+                    ui,
+                    "Zoom",
+                    &format!("{:.2}x", self.shell.canvas_mode.document.viewport.zoom),
+                );
+                Self::render_summary_kv(
+                    ui,
+                    "Autosave",
+                    if self.shell.canvas_mode.document.autosave.dirty {
+                        "Unsaved changes"
+                    } else {
+                        "Clean"
+                    },
+                );
+                Self::render_summary_kv(
+                    ui,
+                    "Recovery",
+                    if self.services.persistence.has_canvas_recovery_snapshot() {
+                        "Available"
+                    } else {
+                        "None"
+                    },
+                );
+            },
         );
-        ui.label(format!(
-            "Items: {}",
-            self.shell.canvas_mode.document.items.len()
-        ));
-        ui.label(format!(
-            "Zoom: {:.2}",
-            self.shell.canvas_mode.document.viewport.zoom
-        ));
-        ui.label(format!(
-            "Origin: ({:.0}, {:.0})",
-            self.shell.canvas_mode.document.viewport.origin.x,
-            self.shell.canvas_mode.document.viewport.origin.y
-        ));
-        ui.label(format!(
-            "Selection: {:?}",
-            self.shell.canvas_mode.document.selection
-        ));
-        ui.label(format!(
-            "Dirty: {}",
-            self.shell.canvas_mode.document.autosave.dirty
-        ));
-        ui.label(format!(
-            "Recovery snapshot: {}",
-            if self.services.persistence.has_canvas_recovery_snapshot() {
-                "available"
-            } else {
-                "none"
-            }
-        ));
-        ui.label(format!(
-            "Active stroke points: {}",
-            self.shell
-                .canvas_mode
-                .ui
-                .active_stroke
-                .as_ref()
-                .map_or(0, |stroke| stroke.points.len())
-        ));
-        ui.label(format!(
-            "Tool: {:?}",
-            self.shell.shared_ui.annotation_tools.current_tool
-        ));
-        ui.label(format!(
-            "Export target: {:?}",
-            self.shell.canvas_mode.document.selection
-        ));
     }
 
     fn render_pdf_summary(&self, ui: &mut egui::Ui) {
-        ui.heading("PDF Root");
-        ui.label(
-            self.shell
-                .pdf_mode
-                .session
-                .metadata
-                .title
-                .as_deref()
-                .unwrap_or("No PDF opened"),
+        Self::render_section_card(
+            ui,
+            "PDF",
+            "Document-focused state for the current reading session.",
+            |ui| {
+                Self::render_summary_kv(
+                    ui,
+                    "Title",
+                    self.shell
+                        .pdf_mode
+                        .session
+                        .metadata
+                        .title
+                        .as_deref()
+                        .unwrap_or("No PDF opened"),
+                );
+                Self::render_summary_kv(
+                    ui,
+                    "Page",
+                    &format!(
+                        "{} / {}",
+                        self.shell.pdf_mode.session.viewport.page_index + 1,
+                        self.shell.pdf_mode.ui.page_count
+                    ),
+                );
+                Self::render_summary_kv(ui, "Tool", self.current_tool_label());
+                Self::render_summary_kv(
+                    ui,
+                    "Text source",
+                    &format!(
+                        "{:?}",
+                        self.shell.pdf_mode.session.reading_support.text_source
+                    ),
+                );
+                Self::render_summary_kv(
+                    ui,
+                    "Reliability",
+                    &format!(
+                        "{:?}",
+                        self.shell.pdf_mode.session.reading_support.reliability
+                    ),
+                );
+                Self::render_summary_kv(
+                    ui,
+                    "Annotations",
+                    &self.shell.pdf_mode.session.annotations.len().to_string(),
+                );
+                Self::render_summary_kv(
+                    ui,
+                    "Autosave",
+                    if self.shell.pdf_mode.session.autosave.dirty {
+                        "Unsaved changes"
+                    } else {
+                        "Clean"
+                    },
+                );
+                Self::render_summary_kv(
+                    ui,
+                    "Recovery",
+                    if self.services.persistence.has_pdf_recovery_snapshot() {
+                        "Available"
+                    } else {
+                        "None"
+                    },
+                );
+            },
         );
-        ui.label(format!(
-            "Page: {}",
-            self.shell.pdf_mode.session.viewport.page_index + 1
-        ));
-        ui.label(format!("Page count: {}", self.shell.pdf_mode.ui.page_count));
-        ui.label(format!(
-            "Zoom: {:.2}",
-            self.shell.pdf_mode.session.viewport.zoom
-        ));
-        ui.label(format!(
-            "Text source: {:?}",
-            self.shell.pdf_mode.session.reading_support.text_source
-        ));
-        ui.label(format!(
-            "Reading reliability: {:?}",
-            self.shell.pdf_mode.session.reading_support.reliability
-        ));
-        ui.label(format!(
-            "Tool: {:?}",
-            self.shell.shared_ui.annotation_tools.current_tool
-        ));
-        ui.label(format!(
-            "PDF annotations: {}",
-            self.shell.pdf_mode.session.annotations.len()
-        ));
-        ui.label(format!(
-            "Dirty: {}",
-            self.shell.pdf_mode.session.autosave.dirty
-        ));
-        ui.label(format!(
-            "Recovery snapshot: {}",
-            if self.services.persistence.has_pdf_recovery_snapshot() {
-                "available"
-            } else {
-                "none"
-            }
-        ));
     }
 
     fn render_annotation_toolbar(&mut self, ui: &mut egui::Ui, mode: WorkspaceMode) {
-        ui.group(|ui| {
-            ui.horizontal(|ui| {
-                ui.label("Annotation tool:");
+        let tool_summary = match self.shell.shared_ui.annotation_tools.current_tool {
+            AnnotationTool::Ink => "Ink draws normal pen marks.",
+            AnnotationTool::Highlighter => "Highlighter adds broad translucent markup.",
+            AnnotationTool::Selection => "Selection clicks existing notes, strokes, or highlights.",
+            AnnotationTool::Eraser => "Eraser removes supported notes, strokes, or highlights.",
+        };
+
+        Self::render_section_card(ui, "Tools", tool_summary, |ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.selectable_value(
                     &mut self.shell.shared_ui.annotation_tools.current_tool,
                     AnnotationTool::Ink,
@@ -216,18 +236,46 @@ impl RpdfApp {
                 );
             });
 
-            ui.horizontal(|ui| {
-                ui.label("Note:");
-                ui.text_edit_singleline(
-                    &mut self.shell.shared_ui.annotation_tools.pending_note_text,
-                );
-                if ui.button("Add note").clicked() {
-                    match mode {
-                        WorkspaceMode::InfiniteCanvas => self.add_canvas_note(),
-                        WorkspaceMode::PdfDocument => self.add_pdf_note(),
+            ui.collapsing("Quick note", |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Text:");
+                    ui.text_edit_singleline(
+                        &mut self.shell.shared_ui.annotation_tools.pending_note_text,
+                    );
+                    if ui.button("Add note").clicked() {
+                        match mode {
+                            WorkspaceMode::InfiniteCanvas => self.add_canvas_note(),
+                            WorkspaceMode::PdfDocument => self.add_pdf_note(),
+                        }
                     }
-                }
+                });
             });
+        });
+    }
+
+    fn render_section_card<R>(
+        ui: &mut egui::Ui,
+        title: &str,
+        subtitle: &str,
+        add_contents: impl FnOnce(&mut egui::Ui) -> R,
+    ) -> R {
+        egui::Frame::group(ui.style())
+            .inner_margin(egui::Margin::same(10))
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new(title).strong());
+                if !subtitle.is_empty() {
+                    ui.label(egui::RichText::new(subtitle).small());
+                }
+                ui.add_space(6.0);
+                add_contents(ui)
+            })
+            .inner
+    }
+
+    fn render_summary_kv(ui: &mut egui::Ui, label: &str, value: &str) {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new(label).strong());
+            ui.label(value);
         });
     }
 
@@ -319,6 +367,34 @@ impl RpdfApp {
         };
 
         self.render_status_banner(ui, tone, "Autosave", &body);
+    }
+
+    fn current_mode_label(&self) -> &'static str {
+        match self.shell.mode {
+            WorkspaceMode::InfiniteCanvas => "Infinite Canvas",
+            WorkspaceMode::PdfDocument => "PDF Mode",
+        }
+    }
+
+    fn current_tool_label(&self) -> &'static str {
+        match self.shell.shared_ui.annotation_tools.current_tool {
+            AnnotationTool::Ink => "Ink",
+            AnnotationTool::Highlighter => "Highlighter",
+            AnnotationTool::Selection => "Selection",
+            AnnotationTool::Eraser => "Eraser",
+        }
+    }
+
+    fn canvas_selection_summary(&self) -> String {
+        match &self.shell.canvas_mode.document.selection {
+            SelectionTarget::WholeCanvas => "Whole canvas".to_string(),
+            SelectionTarget::None => "None".to_string(),
+            SelectionTarget::ItemIds(ids) if ids.is_empty() => "Manual target empty".to_string(),
+            SelectionTarget::ItemIds(ids) => format!("{} item(s)", ids.len()),
+            SelectionTarget::PdfPageSelection(selection) => {
+                format!("{} PDF page(s)", selection.page_indices.len())
+            }
+        }
     }
 }
 
