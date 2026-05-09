@@ -11,9 +11,11 @@ impl RpdfApp {
         ui.horizontal(|ui| {
             ui.label("Primary drag: draw");
             ui.separator();
-            ui.label("Secondary drag: pan");
+            ui.label("Secondary drag or hold Space + drag: pan");
             ui.separator();
             ui.label("Scroll: zoom");
+            ui.separator();
+            ui.label("Double-tap Space: fit content");
         });
 
         ui.add_space(8.0);
@@ -40,6 +42,7 @@ impl RpdfApp {
         let (response, painter) = ui.allocate_painter(available, egui::Sense::click_and_drag());
         let canvas_rect = response.rect;
 
+        self.handle_canvas_navigation_shortcuts(ui, &response);
         self.apply_canvas_zoom(ui, &response);
         self.apply_canvas_pan(ui, &response);
         self.handle_canvas_drawing(ui, &response);
@@ -296,7 +299,15 @@ impl RpdfApp {
     }
 
     fn apply_canvas_pan(&mut self, ui: &egui::Ui, response: &egui::Response) {
-        if !response.hovered() || !ui.input(|input| input.pointer.secondary_down()) {
+        let holding_space = self.is_canvas_space_pan_active(ui);
+        let is_drag_panning = ui.input(|input| {
+            input.pointer.secondary_down()
+                || (holding_space
+                    && (input.pointer.primary_down()
+                        || input.pointer.middle_down()
+                        || input.pointer.secondary_down()))
+        });
+        if !response.hovered() || !is_drag_panning {
             return;
         }
 
@@ -308,6 +319,11 @@ impl RpdfApp {
     }
 
     fn handle_canvas_drawing(&mut self, ui: &egui::Ui, response: &egui::Response) {
+        if self.is_canvas_space_pan_active(ui) {
+            self.shell.canvas_mode.ui.active_stroke = None;
+            return;
+        }
+
         match self.shell.shared_ui.annotation_tools.current_tool {
             AnnotationTool::Selection => {
                 self.shell.canvas_mode.ui.active_stroke = None;
@@ -635,6 +651,43 @@ impl RpdfApp {
         egui::Rect::from_center_size(egui::Pos2::ZERO, egui::vec2(4000.0, 2400.0))
     }
 
+    fn handle_canvas_navigation_shortcuts(&mut self, ui: &egui::Ui, response: &egui::Response) {
+        if ui.ctx().wants_keyboard_input() {
+            return;
+        }
+
+        let pressed_space = ui.input(|input| {
+            input.events.iter().any(|event| {
+                matches!(
+                    event,
+                    egui::Event::Key {
+                        key: egui::Key::Space,
+                        pressed: true,
+                        repeat: false,
+                        ..
+                    }
+                )
+            })
+        });
+        if !pressed_space {
+            return;
+        }
+
+        let now = current_unix_ms();
+        let previous = self.shell.canvas_mode.ui.last_space_press_unix_ms;
+        self.shell.canvas_mode.ui.last_space_press_unix_ms = now;
+
+        if now.saturating_sub(previous) <= 350
+            && (response.hovered() || response.dragged() || response.has_focus())
+        {
+            self.fit_canvas_content_to_view(response.rect);
+        }
+    }
+
+    fn is_canvas_space_pan_active(&self, ui: &egui::Ui) -> bool {
+        !ui.ctx().wants_keyboard_input() && ui.input(|input| input.key_down(egui::Key::Space))
+    }
+
     fn paint_imported_image(
         &self,
         painter: &egui::Painter,
@@ -870,6 +923,31 @@ impl RpdfApp {
             x: self.shell.canvas_mode.document.viewport.origin.x + dx,
             y: self.shell.canvas_mode.document.viewport.origin.y + dy,
         }
+    }
+
+    fn fit_canvas_content_to_view(&mut self, rect: egui::Rect) {
+        let Some(bounds) = canvas_content_bounds(&self.shell.canvas_mode.document.items) else {
+            self.shell.canvas_mode.document.viewport.origin = Point { x: 0.0, y: 0.0 };
+            self.shell.canvas_mode.document.viewport.zoom = 1.0;
+            self.shell.canvas_mode.ui.save_status =
+                "Canvas is empty. Reset the view to the default workspace center.".to_string();
+            return;
+        };
+
+        let padding = 80.0;
+        let available_width = (rect.width() - padding).max(160.0);
+        let available_height = (rect.height() - padding).max(160.0);
+        let fit_zoom = (available_width / bounds.size.width)
+            .min(available_height / bounds.size.height)
+            .clamp(0.2, 4.0);
+
+        self.shell.canvas_mode.document.viewport.origin = Point {
+            x: bounds.origin.x + bounds.size.width * 0.5,
+            y: bounds.origin.y + bounds.size.height * 0.5,
+        };
+        self.shell.canvas_mode.document.viewport.zoom = fit_zoom;
+        self.shell.canvas_mode.ui.save_status =
+            "Fitted the visible canvas content to the workspace view.".to_string();
     }
 
     fn next_canvas_item_id(&mut self) -> u64 {
@@ -1129,5 +1207,130 @@ impl RpdfApp {
                 self.shell.canvas_mode.ui.save_status = format!("Canvas recovery failed: {error}");
             }
         }
+    }
+}
+
+fn canvas_content_bounds(items: &[CanvasItem]) -> Option<Rect> {
+    items
+        .iter()
+        .filter_map(canvas_item_bounds)
+        .reduce(union_rects)
+        .map(expand_rect_for_fit)
+}
+
+fn canvas_item_bounds(item: &CanvasItem) -> Option<Rect> {
+    match item {
+        CanvasItem::PenStroke(stroke) => stroke_bounds(&stroke.points),
+        CanvasItem::Text(text) => Some(text.bounds),
+        CanvasItem::ImportedImage(image) => Some(image.bounds),
+        CanvasItem::ImportedPdfPage(page) => Some(page.bounds),
+    }
+}
+
+fn union_rects(left: Rect, right: Rect) -> Rect {
+    let min_x = left.origin.x.min(right.origin.x);
+    let min_y = left.origin.y.min(right.origin.y);
+    let max_x = (left.origin.x + left.size.width).max(right.origin.x + right.size.width);
+    let max_y = (left.origin.y + left.size.height).max(right.origin.y + right.size.height);
+
+    Rect {
+        origin: Point { x: min_x, y: min_y },
+        size: Size {
+            width: (max_x - min_x).max(1.0),
+            height: (max_y - min_y).max(1.0),
+        },
+    }
+}
+
+fn expand_rect_for_fit(bounds: Rect) -> Rect {
+    const MARGIN: f32 = 60.0;
+
+    Rect {
+        origin: Point {
+            x: bounds.origin.x - MARGIN,
+            y: bounds.origin.y - MARGIN,
+        },
+        size: Size {
+            width: (bounds.size.width + MARGIN * 2.0).max(160.0),
+            height: (bounds.size.height + MARGIN * 2.0).max(160.0),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{
+        AnnotationAppearanceSet, AnnotationLayerRole, BrushStyle, ImportedAssetSource,
+        ImportedImageItem, PenStrokeItem, PenToolKind, RgbaColor, StrokePoint,
+    };
+
+    #[test]
+    fn canvas_content_bounds_cover_multiple_item_types() {
+        let stroke = CanvasItem::PenStroke(PenStrokeItem {
+            item_id: "stroke-1".to_string(),
+            points: vec![
+                StrokePoint {
+                    position: Point { x: 10.0, y: 20.0 },
+                    pressure: 0.5,
+                },
+                StrokePoint {
+                    position: Point { x: 40.0, y: 80.0 },
+                    pressure: 0.7,
+                },
+            ],
+            brush: BrushStyle {
+                color: AnnotationAppearanceSet {
+                    normal_view: RgbaColor {
+                        red: 0,
+                        green: 0,
+                        blue: 0,
+                        alpha: 255,
+                    },
+                    recolored_view: RgbaColor {
+                        red: 0,
+                        green: 0,
+                        blue: 0,
+                        alpha: 255,
+                    },
+                },
+                width: 4.0,
+                tool: PenToolKind::Ink,
+            },
+            layer_role: AnnotationLayerRole::CanvasMarkup,
+        });
+        let image = CanvasItem::ImportedImage(ImportedImageItem {
+            item_id: "image-1".to_string(),
+            source: ImportedAssetSource::FilePath("test.png".into()),
+            bounds: Rect {
+                origin: Point { x: 120.0, y: 140.0 },
+                size: Size {
+                    width: 300.0,
+                    height: 200.0,
+                },
+            },
+        });
+
+        let bounds = canvas_content_bounds(&[stroke, image]).expect("content bounds");
+        assert_eq!(bounds.origin.x, -50.0);
+        assert_eq!(bounds.origin.y, -40.0);
+        assert_eq!(bounds.size.width, 530.0);
+        assert_eq!(bounds.size.height, 440.0);
+    }
+
+    #[test]
+    fn expand_rect_for_fit_enforces_minimum_size() {
+        let expanded = expand_rect_for_fit(Rect {
+            origin: Point { x: 4.0, y: 8.0 },
+            size: Size {
+                width: 20.0,
+                height: 24.0,
+            },
+        });
+
+        assert_eq!(expanded.origin.x, -56.0);
+        assert_eq!(expanded.origin.y, -52.0);
+        assert_eq!(expanded.size.width, 160.0);
+        assert_eq!(expanded.size.height, 160.0);
     }
 }

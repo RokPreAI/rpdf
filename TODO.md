@@ -2,16 +2,16 @@
 
 ## Current TODOs
 
-- [ ] 1 Navigation add-space-pan-and-fit-to-content
+- [ ] 2 Canvas add-clipboard-image-paste-support
 
 ## Active TODOs
 
-- [ ] 2 Canvas add-clipboard-image-paste-support
 - [ ] 2 Ui simplify-gui-and-tool-grouping
 - [ ] 2 Input add-keyboard-shortcuts-and-discoverability
 
 ## Done TODOs
 
+- [x] 1 Navigation add-space-pan-and-fit-to-content
 - [x] 1 Tools add-selection-and-eraser-tools
 - [x] 0 Pdf stabilize-pdf-open-path-and-crash-handling
 - [x] 3 Ux run-study-session-ux-hardening
@@ -548,7 +548,7 @@ Prefer a coherent whole-item erase/select behavior first over a complex partial-
 
 Priority: 1
 Area: Navigation
-Status: current
+Status: done
 Depends on: stabilize-pdf-open-path-and-crash-handling
 
 Goal:
@@ -575,8 +575,8 @@ Keep this canvas-first unless PDF Mode can share the same navigation shortcut cl
 
 Priority: 2
 Area: Canvas
-Status: pending
-Depends on: add-selection-and-eraser-tools
+Status: current
+Depends on: add-selection-and-eraser-tools, add-space-pan-and-fit-to-content
 
 Goal:
 Allow the user to paste an image from the system clipboard directly into Infinite Canvas Mode.

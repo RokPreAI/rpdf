@@ -407,6 +407,7 @@ pub struct CanvasInteractionState {
     pub export_path: String,
     pub export_status: String,
     pub last_autosave_unix_ms: u64,
+    pub last_space_press_unix_ms: u64,
 }
 
 #[derive(Debug, Clone)]
