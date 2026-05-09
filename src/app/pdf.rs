@@ -548,7 +548,7 @@ impl RpdfApp {
         }
     }
 
-    fn open_pdf_document(&mut self) {
+    pub(super) fn open_pdf_document(&mut self) {
         let mut path = self.shell.pdf_mode.ui.pending_open_path.trim().to_string();
         if path.is_empty() {
             match self.services.reading_support.pick_pdf_path() {
@@ -602,7 +602,7 @@ impl RpdfApp {
         self.shell.pdf_mode.ui.status_message = "Opened PDF document.".to_string();
     }
 
-    fn step_pdf_page(&mut self, delta: isize) {
+    pub(super) fn step_pdf_page(&mut self, delta: isize) {
         let current = self.shell.pdf_mode.session.viewport.page_index as isize;
         let max = self.shell.pdf_mode.ui.page_count.saturating_sub(1) as isize;
         self.shell.pdf_mode.session.viewport.page_index = (current + delta).clamp(0, max) as usize;
@@ -704,7 +704,7 @@ impl RpdfApp {
         }
     }
 
-    fn start_pdf_tts(&mut self) {
+    pub(super) fn start_pdf_tts(&mut self) {
         let path = match &self.shell.pdf_mode.session.source {
             PdfSource::FilePath(path) if !path.as_os_str().is_empty() => path.clone(),
             _ => {
@@ -746,7 +746,7 @@ impl RpdfApp {
         });
     }
 
-    fn stop_pdf_tts(&mut self) {
+    pub(super) fn stop_pdf_tts(&mut self) {
         self.shell.pdf_mode.session.reading_support.tts.playback = PlaybackState::Stopped;
         self.shell.pdf_mode.session.reading_support.tts.active_span = None;
         self.shell.pdf_mode.ui.reading_session = None;
@@ -814,7 +814,7 @@ impl RpdfApp {
         );
     }
 
-    fn save_pdf_session(&mut self) {
+    pub(super) fn save_pdf_session(&mut self) {
         let path = self.shell.pdf_mode.ui.document_path.trim().to_string();
         if path.is_empty() {
             self.shell.pdf_mode.ui.status_message =
@@ -837,7 +837,7 @@ impl RpdfApp {
         }
     }
 
-    fn load_pdf_session(&mut self) {
+    pub(super) fn load_pdf_session(&mut self) {
         let path = self.shell.pdf_mode.ui.document_path.trim().to_string();
         if path.is_empty() {
             self.shell.pdf_mode.ui.status_message =
@@ -870,7 +870,7 @@ impl RpdfApp {
         }
     }
 
-    fn recover_pdf_session(&mut self) {
+    pub(super) fn recover_pdf_session(&mut self) {
         match self.services.persistence.recover_pdf_session() {
             Ok(Some(session)) => {
                 self.shell.pdf_mode.ui.pending_open_path = match &session.source {

@@ -1121,7 +1121,7 @@ impl RpdfApp {
         self.mark_canvas_dirty();
     }
 
-    fn export_canvas_svg(&mut self) {
+    pub(super) fn export_canvas_svg(&mut self) {
         let export_path = self.shell.canvas_mode.ui.export_path.trim().to_string();
         if export_path.is_empty() {
             self.shell.canvas_mode.ui.export_status =
@@ -1244,7 +1244,7 @@ impl RpdfApp {
         }
     }
 
-    fn save_canvas_document(&mut self) {
+    pub(super) fn save_canvas_document(&mut self) {
         let path = self.shell.canvas_mode.ui.document_path.trim().to_string();
         if path.is_empty() {
             self.shell.canvas_mode.ui.save_status =
@@ -1267,7 +1267,7 @@ impl RpdfApp {
         }
     }
 
-    fn load_canvas_document(&mut self) {
+    pub(super) fn load_canvas_document(&mut self) {
         let path = self.shell.canvas_mode.ui.document_path.trim().to_string();
         if path.is_empty() {
             self.shell.canvas_mode.ui.save_status =
@@ -1288,7 +1288,7 @@ impl RpdfApp {
         }
     }
 
-    fn recover_canvas_document(&mut self) {
+    pub(super) fn recover_canvas_document(&mut self) {
         match self.services.persistence.recover_canvas_document() {
             Ok(Some(document)) => {
                 self.shell.canvas_mode.document = document;

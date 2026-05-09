@@ -38,6 +38,7 @@ impl eframe::App for RpdfApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.tick_pdf_reading_support();
         self.tick_autosave();
+        self.handle_global_shortcuts(ctx);
 
         egui::TopBottomPanel::top("mode_switcher").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -73,6 +74,9 @@ impl eframe::App for RpdfApp {
                     WorkspaceMode::InfiniteCanvas => self.render_canvas_summary(ui),
                     WorkspaceMode::PdfDocument => self.render_pdf_summary(ui),
                 }
+
+                ui.add_space(8.0);
+                self.render_shortcuts_summary(ui);
             });
 
         egui::CentralPanel::default().show(ctx, |ui| match self.shell.mode {
@@ -83,6 +87,85 @@ impl eframe::App for RpdfApp {
 }
 
 impl RpdfApp {
+    fn handle_global_shortcuts(&mut self, ctx: &egui::Context) {
+        if ctx.wants_keyboard_input() {
+            return;
+        }
+
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Tab)) {
+            self.toggle_workspace_mode();
+        }
+
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::B)) {
+            self.shell.shared_ui.annotation_tools.current_tool = AnnotationTool::Ink;
+        }
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::H)) {
+            self.shell.shared_ui.annotation_tools.current_tool = AnnotationTool::Highlighter;
+        }
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::V)) {
+            self.shell.shared_ui.annotation_tools.current_tool = AnnotationTool::Selection;
+        }
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::E)) {
+            self.shell.shared_ui.annotation_tools.current_tool = AnnotationTool::Eraser;
+        }
+
+        if ctx.input_mut(|input| input.consume_shortcut(&Self::command_shortcut(egui::Key::S))) {
+            match self.shell.mode {
+                WorkspaceMode::InfiniteCanvas => self.save_canvas_document(),
+                WorkspaceMode::PdfDocument => self.save_pdf_session(),
+            }
+        }
+
+        if ctx.input_mut(|input| input.consume_shortcut(&Self::command_shortcut(egui::Key::L))) {
+            match self.shell.mode {
+                WorkspaceMode::InfiniteCanvas => self.load_canvas_document(),
+                WorkspaceMode::PdfDocument => self.load_pdf_session(),
+            }
+        }
+
+        if ctx.input_mut(|input| input.consume_shortcut(&Self::command_shortcut(egui::Key::R))) {
+            match self.shell.mode {
+                WorkspaceMode::InfiniteCanvas => self.recover_canvas_document(),
+                WorkspaceMode::PdfDocument => self.recover_pdf_session(),
+            }
+        }
+
+        match self.shell.mode {
+            WorkspaceMode::InfiniteCanvas => self.handle_canvas_mode_shortcuts(ctx),
+            WorkspaceMode::PdfDocument => self.handle_pdf_mode_shortcuts(ctx),
+        }
+    }
+
+    fn handle_canvas_mode_shortcuts(&mut self, ctx: &egui::Context) {
+        if ctx
+            .input_mut(|input| input.consume_shortcut(&Self::command_shift_shortcut(egui::Key::E)))
+        {
+            self.export_canvas_svg();
+        }
+    }
+
+    fn handle_pdf_mode_shortcuts(&mut self, ctx: &egui::Context) {
+        if ctx.input_mut(|input| input.consume_shortcut(&Self::command_shortcut(egui::Key::O))) {
+            self.open_pdf_document();
+        }
+
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft)) {
+            self.step_pdf_page(-1);
+        }
+
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight)) {
+            self.step_pdf_page(1);
+        }
+
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::T)) {
+            if self.shell.pdf_mode.session.reading_support.tts.playback == PlaybackState::Playing {
+                self.stop_pdf_tts();
+            } else {
+                self.start_pdf_tts();
+            }
+        }
+    }
+
     fn render_canvas_summary(&mut self, ui: &mut egui::Ui) {
         Self::render_section_card(
             ui,
@@ -130,6 +213,24 @@ impl RpdfApp {
                         "None"
                     },
                 );
+            },
+        );
+    }
+
+    fn render_shortcuts_summary(&self, ui: &mut egui::Ui) {
+        Self::render_section_card(
+            ui,
+            "Shortcuts",
+            "Common actions. Shortcut handling pauses while typing in a text field.",
+            |ui| {
+                for (shortcut, description) in self.visible_shortcuts() {
+                    Self::render_summary_kv(ui, &ui.ctx().format_shortcut(&shortcut), description);
+                }
+
+                if self.shell.mode == WorkspaceMode::InfiniteCanvas {
+                    Self::render_summary_kv(ui, "Hold Space + drag", "Pan canvas");
+                    Self::render_summary_kv(ui, "Double Space", "Fit content to view");
+                }
             },
         );
     }
@@ -376,6 +477,13 @@ impl RpdfApp {
         }
     }
 
+    fn toggle_workspace_mode(&mut self) {
+        self.shell.mode = match self.shell.mode {
+            WorkspaceMode::InfiniteCanvas => WorkspaceMode::PdfDocument,
+            WorkspaceMode::PdfDocument => WorkspaceMode::InfiniteCanvas,
+        };
+    }
+
     fn current_tool_label(&self) -> &'static str {
         match self.shell.shared_ui.annotation_tools.current_tool {
             AnnotationTool::Ink => "Ink",
@@ -395,6 +503,72 @@ impl RpdfApp {
                 format!("{} PDF page(s)", selection.page_indices.len())
             }
         }
+    }
+
+    fn command_shortcut(key: egui::Key) -> egui::KeyboardShortcut {
+        egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key)
+    }
+
+    fn command_shift_shortcut(key: egui::Key) -> egui::KeyboardShortcut {
+        egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, key)
+    }
+
+    fn visible_shortcuts(&self) -> Vec<(egui::KeyboardShortcut, &'static str)> {
+        let mut shortcuts = vec![
+            (
+                egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Tab),
+                "Switch workspace mode",
+            ),
+            (
+                egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::B),
+                "Select ink tool",
+            ),
+            (
+                egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::H),
+                "Select highlighter",
+            ),
+            (
+                egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::V),
+                "Select selection tool",
+            ),
+            (
+                egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::E),
+                "Select eraser",
+            ),
+            (Self::command_shortcut(egui::Key::S), "Save current session"),
+            (Self::command_shortcut(egui::Key::L), "Load current session"),
+            (
+                Self::command_shortcut(egui::Key::R),
+                "Recover latest autosave",
+            ),
+        ];
+
+        match self.shell.mode {
+            WorkspaceMode::InfiniteCanvas => {
+                shortcuts.push((
+                    Self::command_shortcut(egui::Key::V),
+                    "Paste clipboard image",
+                ));
+                shortcuts.push((Self::command_shift_shortcut(egui::Key::E), "Export SVG"));
+            }
+            WorkspaceMode::PdfDocument => {
+                shortcuts.push((Self::command_shortcut(egui::Key::O), "Open PDF"));
+                shortcuts.push((
+                    egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::ArrowLeft),
+                    "Previous page",
+                ));
+                shortcuts.push((
+                    egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::ArrowRight),
+                    "Next page",
+                ));
+                shortcuts.push((
+                    egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::T),
+                    "Start or stop TTS",
+                ));
+            }
+        }
+
+        shortcuts
     }
 }
 

@@ -2,7 +2,7 @@
 
 ## Current TODOs
 
-- [ ] 2 Input add-keyboard-shortcuts-and-discoverability
+- None
 
 ## Active TODOs
 
@@ -10,6 +10,7 @@
 
 ## Done TODOs
 
+- [x] 2 Input add-keyboard-shortcuts-and-discoverability
 - [x] 2 Ui simplify-gui-and-tool-grouping
 - [x] 2 Canvas add-clipboard-image-paste-support
 - [x] 1 Navigation add-space-pan-and-fit-to-content
@@ -630,7 +631,7 @@ This is not a design-system rewrite. Keep it as a focused simplification pass dr
 
 Priority: 2
 Area: Input
-Status: current
+Status: done
 Depends on: add-selection-and-eraser-tools, add-space-pan-and-fit-to-content, simplify-gui-and-tool-grouping
 
 Goal:
