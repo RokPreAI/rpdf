@@ -1,7 +1,7 @@
 use super::util;
 use crate::model::{
     CanvasDocument, CanvasItem, HighlightMode, IncompatibleExportReason, PdfDocumentSession,
-    ReadingReliability, SvgCompatibility, TextSupportSource, UserVisibleWarning, WarningCode,
+    ReadingReliability, Size, SvgCompatibility, TextSupportSource, UserVisibleWarning, WarningCode,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -13,10 +13,14 @@ pub struct AppServices {
     pub reading_support: ReadingSupportService,
     pub canvas_export: CanvasExportService,
     pub persistence: PersistenceService,
+    pub clipboard_import: ClipboardImportService,
 }
 
 #[derive(Debug, Default)]
 pub struct ReadingSupportService;
+
+#[derive(Debug, Default)]
+pub struct ClipboardImportService;
 
 #[derive(Debug, Clone)]
 pub struct ReadingSupportResolution {
@@ -30,6 +34,12 @@ pub struct ReadingSupportResolution {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PdfOpenPreparation {
     pub page_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipboardImageImport {
+    pub width: usize,
+    pub height: usize,
 }
 
 impl ReadingSupportService {
@@ -165,6 +175,29 @@ impl ReadingSupportService {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
         combined.join(" ")
+    }
+}
+
+impl ClipboardImportService {
+    pub fn read_clipboard_image(&self) -> Result<ClipboardImageImport, String> {
+        let mut clipboard =
+            arboard::Clipboard::new().map_err(|error| format!("Clipboard unavailable: {error}"))?;
+        let image = clipboard.get_image().map_err(|error| {
+            format!("Clipboard does not currently contain a supported image: {error}")
+        })?;
+
+        if image.width == 0 || image.height == 0 {
+            return Err("Clipboard image has invalid zero-sized dimensions.".to_string());
+        }
+
+        Ok(ClipboardImageImport {
+            width: image.width,
+            height: image.height,
+        })
+    }
+
+    pub fn canvas_image_size(&self, width: usize, height: usize) -> Size {
+        scaled_canvas_image_size(width, height)
     }
 }
 
@@ -379,6 +412,30 @@ fn normalize_extracted_text(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn scaled_canvas_image_size(width: usize, height: usize) -> Size {
+    let width = width.max(1) as f32;
+    let height = height.max(1) as f32;
+    let max_width = 480.0;
+    let max_height = 320.0;
+    let min_width = 120.0;
+    let min_height = 90.0;
+    let scale = (max_width / width).min(max_height / height).min(1.0);
+
+    let mut scaled_width = width * scale;
+    let mut scaled_height = height * scale;
+
+    let min_scale = (min_width / scaled_width)
+        .max(min_height / scaled_height)
+        .max(1.0);
+    scaled_width *= min_scale;
+    scaled_height *= min_scale;
+
+    Size {
+        width: scaled_width,
+        height: scaled_height,
+    }
+}
+
 fn create_ocr_temp_dir() -> Result<PathBuf, std::io::Error> {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -436,8 +493,8 @@ fn current_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CanvasExportService, PersistenceService, ReadingSupportService, TextQuality,
-        current_unix_ms, native_text_quality, normalize_extracted_text,
+        CanvasExportService, ClipboardImportService, PersistenceService, ReadingSupportService,
+        TextQuality, current_unix_ms, native_text_quality, normalize_extracted_text,
     };
     use crate::model::{
         AnnotationAppearanceSet, AnnotationLayerRole, AnnotationVisibility, AutosaveState,
@@ -625,6 +682,24 @@ mod tests {
             service.first_incompatibility(&[&pdf]),
             Some(crate::model::IncompatibleExportReason::ImportedPdfPage)
         );
+    }
+
+    #[test]
+    fn scales_clipboard_images_down_but_keeps_aspect_ratio() {
+        let service = ClipboardImportService;
+        let size = service.canvas_image_size(1600, 800);
+
+        assert!((size.width - 480.0).abs() < 0.01);
+        assert!((size.height - 240.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn scales_tiny_clipboard_images_up_to_minimum_size() {
+        let service = ClipboardImportService;
+        let size = service.canvas_image_size(20, 10);
+
+        assert_eq!(size.width, 180.0);
+        assert_eq!(size.height, 90.0);
     }
 
     fn unique_test_path(name: &str) -> String {

@@ -12,6 +12,7 @@ name = "rpdf"
 path = "src/main.rs"
 
 [dependencies]
+arboard = "3.6.1"
 eframe = "0.31"
 rfd = "0.15"
 serde = { version = "1", features = ["derive"] }

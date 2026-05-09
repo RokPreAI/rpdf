@@ -164,6 +164,11 @@ pub struct ImportedPdfPageItem {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ImportedAssetSource {
     FilePath(PathBuf),
+    ClipboardImage {
+        width: usize,
+        height: usize,
+        pasted_unix_ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

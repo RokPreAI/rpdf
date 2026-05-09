@@ -2,15 +2,15 @@
 
 ## Current TODOs
 
-- [ ] 2 Canvas add-clipboard-image-paste-support
+- [ ] 2 Ui simplify-gui-and-tool-grouping
 
 ## Active TODOs
 
-- [ ] 2 Ui simplify-gui-and-tool-grouping
 - [ ] 2 Input add-keyboard-shortcuts-and-discoverability
 
 ## Done TODOs
 
+- [x] 2 Canvas add-clipboard-image-paste-support
 - [x] 1 Navigation add-space-pan-and-fit-to-content
 - [x] 1 Tools add-selection-and-eraser-tools
 - [x] 0 Pdf stabilize-pdf-open-path-and-crash-handling
@@ -575,7 +575,7 @@ Keep this canvas-first unless PDF Mode can share the same navigation shortcut cl
 
 Priority: 2
 Area: Canvas
-Status: current
+Status: done
 Depends on: add-selection-and-eraser-tools, add-space-pan-and-fit-to-content
 
 Goal:
@@ -602,7 +602,7 @@ Keep the first version image-only. Do not expand this task into generic clipboar
 
 Priority: 2
 Area: Ui
-Status: pending
+Status: current
 Depends on: add-selection-and-eraser-tools, add-space-pan-and-fit-to-content
 
 Goal:

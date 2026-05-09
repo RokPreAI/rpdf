@@ -7,6 +7,8 @@ use super::*;
 
 impl RpdfApp {
     pub(super) fn render_canvas_workspace(&mut self, ui: &mut egui::Ui) {
+        self.handle_canvas_clipboard_shortcuts(ui);
+
         ui.heading("Infinite Canvas Mode");
         ui.horizontal(|ui| {
             ui.label("Primary drag: draw");
@@ -16,6 +18,8 @@ impl RpdfApp {
             ui.label("Scroll: zoom");
             ui.separator();
             ui.label("Double-tap Space: fit content");
+            ui.separator();
+            ui.label("Cmd/Ctrl+V: paste clipboard image");
         });
 
         ui.add_space(8.0);
@@ -146,6 +150,9 @@ impl RpdfApp {
                         ui.text_edit_singleline(&mut self.shell.canvas_mode.ui.pending_image_path);
                         if ui.button("Import image").clicked() {
                             self.import_canvas_image();
+                        }
+                        if ui.button("Paste clipboard image").clicked() {
+                            self.paste_canvas_image_from_clipboard();
                         }
                     });
 
@@ -688,6 +695,20 @@ impl RpdfApp {
         !ui.ctx().wants_keyboard_input() && ui.input(|input| input.key_down(egui::Key::Space))
     }
 
+    fn handle_canvas_clipboard_shortcuts(&mut self, ui: &egui::Ui) {
+        if ui.ctx().wants_keyboard_input() {
+            return;
+        }
+
+        let paste_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V);
+        if ui
+            .ctx()
+            .input_mut(|input| input.consume_shortcut(&paste_shortcut))
+        {
+            self.paste_canvas_image_from_clipboard();
+        }
+    }
+
     fn paint_imported_image(
         &self,
         painter: &egui::Painter,
@@ -712,6 +733,9 @@ impl RpdfApp {
 
         let label = match &image.source {
             ImportedAssetSource::FilePath(path) => format!("Image\n{}", file_label(path)),
+            ImportedAssetSource::ClipboardImage { width, height, .. } => {
+                format!("Clipboard image\n{} x {}", width, height)
+            }
         };
         painter.text(
             screen_rect.center(),
@@ -881,6 +905,47 @@ impl RpdfApp {
             }));
         self.mark_canvas_dirty();
         self.shell.canvas_mode.ui.pending_image_path.clear();
+    }
+
+    fn paste_canvas_image_from_clipboard(&mut self) {
+        let clipboard_image = match self.services.clipboard_import.read_clipboard_image() {
+            Ok(image) => image,
+            Err(error) => {
+                self.shell.canvas_mode.ui.save_status = format!("Clipboard paste failed: {error}");
+                return;
+            }
+        };
+
+        let item_id = self.next_canvas_item_id();
+        let size = self
+            .services
+            .clipboard_import
+            .canvas_image_size(clipboard_image.width, clipboard_image.height);
+
+        let item_id_label = format!("image-{item_id}");
+        self.shell
+            .canvas_mode
+            .document
+            .items
+            .push(CanvasItem::ImportedImage(ImportedImageItem {
+                item_id: item_id_label.clone(),
+                source: ImportedAssetSource::ClipboardImage {
+                    width: clipboard_image.width,
+                    height: clipboard_image.height,
+                    pasted_unix_ms: current_unix_ms(),
+                },
+                bounds: Rect {
+                    origin: self
+                        .shifted_canvas_origin(60.0 * item_id as f32, 40.0 * item_id as f32),
+                    size,
+                },
+            }));
+        self.mark_canvas_dirty();
+        self.shell.canvas_mode.document.selection = SelectionTarget::ItemIds(vec![item_id_label]);
+        self.shell.canvas_mode.ui.save_status = format!(
+            "Pasted clipboard image ({} x {}) onto the canvas.",
+            clipboard_image.width, clipboard_image.height
+        );
     }
 
     fn import_canvas_pdf_page(&mut self) {
