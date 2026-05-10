@@ -168,6 +168,30 @@ button {
   pointer-events: none;
 }
 
+.canvas-settings {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: white;
+}
+
+.stroke-width-control {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.stroke-width-control input {
+  width: 180px;
+}
+
+.stroke-width-control output {
+  color: var(--fg-dark);
+}
+
 .canvas-pickers {
   position: absolute;
   right: var(--medium-gap);

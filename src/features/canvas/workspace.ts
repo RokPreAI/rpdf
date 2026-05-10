@@ -5,10 +5,14 @@ type Point = {
   y: number;
 };
 
+type StrokePoint = Point & {
+  pressure: number;
+};
+
 type Stroke = {
-  points: Point[];
+  points: StrokePoint[];
   color: string;
-  width: number;
+  baseWidth: number;
 };
 
 type Camera = {
@@ -38,6 +42,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         Left drag: draw | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
         <div id="selected-tool"></div>
         <div id="selected-color"></div>
+      </div>
+
+      <div class="canvas-settings">
+        <label class="stroke-width-control" for="stroke-width">
+          <span>Stroke width</span>
+          <input id="stroke-width" type="range" min="1" max="24" step="1" value="3" />
+          <output id="stroke-width-value">3px</output>
+        </label>
       </div>
 
       <div class="canvas-pickers">
@@ -85,6 +97,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let isPanning = false;
   let isSpaceDown = false;
   let devicePixelRatioValue = window.devicePixelRatio || 1;
+  let baseStrokeWidth = 3;
 
   const colorVariableByButtonId: Record<string, string> = {
     "color-picker-fg": "--fg",
@@ -173,6 +186,8 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   function setupPickers() {
     const colorButtons = container.querySelectorAll<HTMLButtonElement>(".color-picker");
     const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
+    const strokeWidthInput = requireElement<HTMLInputElement>(container, "#stroke-width");
+    const strokeWidthValue = requireElement<HTMLOutputElement>(container, "#stroke-width-value");
 
     for (const button of colorButtons) {
       button.addEventListener("pointerdown", (event) => {
@@ -228,6 +243,11 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     updateColorIndicator(strokeColor);
     setActiveToolButton(toolButtons, selectedTool);
     updateCursor();
+
+    strokeWidthInput.addEventListener("input", () => {
+      baseStrokeWidth = Number(strokeWidthInput.value);
+      strokeWidthValue.textContent = `${baseStrokeWidth}px`;
+    });
   }
 
   function resizeCanvas() {
@@ -324,26 +344,46 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function drawStroke(stroke: Stroke) {
-    if (stroke.points.length < 2) {
+    if (stroke.points.length === 0) {
       return;
     }
 
     ctx.save();
     ctx.translate(camera.x, camera.y);
     ctx.scale(camera.scale, camera.scale);
-    ctx.beginPath();
     ctx.strokeStyle = stroke.color;
-    ctx.lineWidth = stroke.width / camera.scale;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
 
-    for (const point of stroke.points.slice(1)) {
-      ctx.lineTo(point.x, point.y);
+    if (stroke.points.length === 1) {
+      const point = stroke.points[0];
+      const radius = calculateRenderedStrokeWidth(stroke.baseWidth, point.pressure) / 2;
+
+      ctx.beginPath();
+      ctx.fillStyle = stroke.color;
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
     }
 
-    ctx.stroke();
+    for (let index = 1; index < stroke.points.length; index += 1) {
+      const previousPoint = stroke.points[index - 1];
+      const currentPoint = stroke.points[index];
+      const segmentPressure = (previousPoint.pressure + currentPoint.pressure) / 2;
+
+      ctx.beginPath();
+      ctx.lineWidth = calculateRenderedStrokeWidth(stroke.baseWidth, segmentPressure) / camera.scale;
+      ctx.moveTo(previousPoint.x, previousPoint.y);
+      ctx.lineTo(currentPoint.x, currentPoint.y);
+      ctx.stroke();
+    }
+
     ctx.restore();
+  }
+
+  function calculateRenderedStrokeWidth(strokeWidth: number, pressure: number) {
+    return Math.max(1, strokeWidth * pressure);
   }
 
   function drawImages() {
@@ -527,6 +567,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   const onPointerDown = (event: PointerEvent) => {
     const point = screenToWorld(event.clientX, event.clientY);
+    const pressure = getPointerPressure(event);
 
     if (selectedTool === "pan" || isSpaceDown || event.button === 1 || event.button === 2) {
       isPanning = true;
@@ -546,9 +587,12 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
 
     currentStroke = {
-      points: [point],
+      points: [{
+        ...point,
+        pressure,
+      }],
       color: strokeColor,
-      width: 3,
+      baseWidth: baseStrokeWidth,
     };
 
     strokes.push(currentStroke);
@@ -564,6 +608,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
 
     const point = screenToWorld(event.clientX, event.clientY);
+    const pressure = getPointerPressure(event);
 
     if (selectedTool === "eraser") {
       if (event.buttons === 1) {
@@ -578,7 +623,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return;
     }
 
-    currentStroke.points.push(point);
+    currentStroke.points.push({
+      ...point,
+      pressure,
+    });
     redraw();
   };
 
@@ -673,6 +721,18 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       container.replaceChildren();
     },
   };
+}
+
+function getPointerPressure(event: PointerEvent) {
+  if (event.pointerType === "mouse") {
+    return 1;
+  }
+
+  if (event.pressure <= 0) {
+    return 0.25;
+  }
+
+  return Math.max(0.2, Math.min(event.pressure, 1));
 }
 
 function requireElement<T extends HTMLElement>(root: ParentNode, selector: string) {

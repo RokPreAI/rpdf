@@ -2,11 +2,10 @@
 
 ## Current TODOs
 
-- [ ] 1 Canvas add-tablet-pressure-and-stroke-width
+- [ ] 1 PDF build-pdf-mode-shell
 
 ## Active TODOs
 
-- [ ] 1 PDF build-pdf-mode-shell
 - [ ] 1 Storage add-save-load-project-files
 - [ ] 2 Canvas add-selection-and-move-tools
 - [ ] 2 Reading add-tts-and-reliability-pipeline
@@ -21,6 +20,7 @@
 - [x] 0 Architecture architecture-foundation-and-pdfium-gate
 - [x] 0 Storage versioned-project-and-session-model
 - [x] 1 App split-main-into-shell-and-modes
+- [x] 1 Canvas add-tablet-pressure-and-stroke-width
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste
@@ -113,7 +113,7 @@ Notes:
 
 Priority: 1
 Area: PDF
-Status: pending
+Status: current
 Depends on: split-main-into-shell-and-modes, architecture-foundation-and-pdfium-gate
 
 Goal:
@@ -140,7 +140,7 @@ Notes:
 
 Priority: 1
 Area: Canvas
-Status: current
+Status: done
 Depends on: split-main-into-shell-and-modes
 
 Goal:
