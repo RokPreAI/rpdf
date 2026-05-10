@@ -2,13 +2,11 @@
 
 ## Current TODOs
 
-- [ ] 2 Canvas add-selection-and-move-tools
+- [ ] 2 Storage add-autosave-and-recovery
 
 ## Active TODOs
 
-- [ ] 2 Canvas add-selection-and-move-tools
 - [ ] 2 Reading add-tts-and-reliability-pipeline
-- [ ] 2 Storage add-autosave-and-recovery
 - [ ] 2 Export add-svg-export-eligibility
 - [ ] 3 PDF add-pdf-page-import-and-recolor
 - [ ] 3 Canvas add-draw-shapes
@@ -191,7 +189,7 @@ Notes:
 
 Priority: 2
 Area: Canvas
-Status: pending
+Status: done
 Depends on: split-main-into-shell-and-modes
 
 Goal:

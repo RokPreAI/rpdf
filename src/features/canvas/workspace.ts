@@ -37,7 +37,17 @@ type CanvasImage = {
   height: number;
 };
 
-type Tool = "pen" | "pan" | "eraser";
+type SelectionTarget =
+  | {
+    kind: "stroke";
+    index: number;
+  }
+  | {
+    kind: "image";
+    index: number;
+  };
+
+type Tool = "pen" | "select" | "pan" | "eraser";
 type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
@@ -46,7 +56,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <canvas class="canvas-surface"></canvas>
 
       <div class="canvas-toolbar">
-        Left drag: draw | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
+        Left drag: draw/select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
         <div id="selected-tool"></div>
         <div id="selected-color"></div>
       </div>
@@ -61,6 +71,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
       <div class="canvas-pickers">
         <button class="tool-picker active" data-tool="pen" type="button">P</button>
+        <button class="tool-picker" data-tool="select" type="button">S</button>
         <button class="tool-picker" data-tool="pan" type="button">M</button>
         <button class="tool-picker" data-tool="eraser" type="button">E</button>
 
@@ -102,6 +113,8 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let selectedTool: Tool = "pen";
   let strokeColor = readCssVariable("--fg") || "#c0caf5";
   let currentStroke: Stroke | null = null;
+  let selectedItem: SelectionTarget | null = null;
+  let moveAnchorPoint: Point | null = null;
   let isPanning = false;
   let isSpaceDown = false;
   let devicePixelRatioValue = window.devicePixelRatio || 1;
@@ -162,6 +175,8 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     if (selectedTool === "pen") {
       canvas.style.cursor = "crosshair";
+    } else if (selectedTool === "select") {
+      canvas.style.cursor = selectedItem ? "move" : "default";
     } else if (selectedTool === "pan") {
       canvas.style.cursor = "grab";
     } else {
@@ -236,7 +251,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
         const tool = button.dataset.tool;
 
-        if (tool !== "pen" && tool !== "pan" && tool !== "eraser") {
+        if (tool !== "pen" && tool !== "select" && tool !== "pan" && tool !== "eraser") {
           return;
         }
 
@@ -412,6 +427,39 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.restore();
   }
 
+  function drawSelectionOverlay() {
+    if (!selectedItem) {
+      return;
+    }
+
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.scale, camera.scale);
+    ctx.setLineDash([10 / camera.scale, 8 / camera.scale]);
+    ctx.lineWidth = 2 / camera.scale;
+    ctx.strokeStyle = readCssVariable("--yellow") || "#e0af68";
+
+    if (selectedItem.kind === "image") {
+      const image = images[selectedItem.index];
+
+      if (image) {
+        ctx.strokeRect(image.x, image.y, image.width, image.height);
+      }
+    } else {
+      const stroke = strokes[selectedItem.index];
+
+      if (stroke) {
+        const bounds = getStrokeBounds(stroke);
+
+        if (bounds) {
+          ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
   function redraw() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -424,6 +472,8 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     for (const stroke of strokes) {
       drawStroke(stroke);
     }
+
+    drawSelectionOverlay();
   }
 
   function eraseAtPoint(point: Point) {
@@ -440,6 +490,107 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   function distanceBetweenPoints(firstPoint: Point, secondPoint: Point) {
     return Math.hypot(firstPoint.x - secondPoint.x, firstPoint.y - secondPoint.y);
+  }
+
+  function getStrokeBounds(stroke: Stroke) {
+    if (stroke.points.length === 0) {
+      return null;
+    }
+
+    let minX = stroke.points[0].x;
+    let minY = stroke.points[0].y;
+    let maxX = stroke.points[0].x;
+    let maxY = stroke.points[0].y;
+
+    for (const point of stroke.points) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
+
+    const padding = stroke.baseWidth;
+
+    return {
+      x: minX - padding,
+      y: minY - padding,
+      width: Math.max(1, maxX - minX + padding * 2),
+      height: Math.max(1, maxY - minY + padding * 2),
+    };
+  }
+
+  function hitTestSelection(point: Point): SelectionTarget | null {
+    for (let imageIndex = images.length - 1; imageIndex >= 0; imageIndex -= 1) {
+      const image = images[imageIndex];
+
+      if (
+        point.x >= image.x
+        && point.x <= image.x + image.width
+        && point.y >= image.y
+        && point.y <= image.y + image.height
+      ) {
+        return {
+          kind: "image",
+          index: imageIndex,
+        };
+      }
+    }
+
+    for (let strokeIndex = strokes.length - 1; strokeIndex >= 0; strokeIndex -= 1) {
+      const stroke = strokes[strokeIndex];
+      const bounds = getStrokeBounds(stroke);
+
+      if (!bounds) {
+        continue;
+      }
+
+      const withinBounds = point.x >= bounds.x
+        && point.x <= bounds.x + bounds.width
+        && point.y >= bounds.y
+        && point.y <= bounds.y + bounds.height;
+
+      if (!withinBounds) {
+        continue;
+      }
+
+      if (stroke.points.some((strokePoint) => distanceBetweenPoints(point, strokePoint) <= stroke.baseWidth * 2)) {
+        return {
+          kind: "stroke",
+          index: strokeIndex,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  function moveSelectedItem(deltaX: number, deltaY: number) {
+    if (!selectedItem) {
+      return;
+    }
+
+    if (selectedItem.kind === "image") {
+      const image = images[selectedItem.index];
+
+      if (!image) {
+        return;
+      }
+
+      image.x += deltaX;
+      image.y += deltaY;
+      return;
+    }
+
+    const stroke = strokes[selectedItem.index];
+
+    if (!stroke) {
+      return;
+    }
+
+    for (const point of stroke.points) {
+      point.x += deltaX;
+      point.y += deltaY;
+    }
   }
 
   function addLoadedImage(image: HTMLImageElement, id: string, assetPath: string) {
@@ -610,6 +761,16 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     if (selectedTool === "eraser") {
       eraseAtPoint(point);
+      selectedItem = null;
+      redraw();
+      return;
+    }
+
+    if (selectedTool === "select") {
+      selectedItem = hitTestSelection(point);
+      moveAnchorPoint = selectedItem ? point : null;
+      canvas.setPointerCapture(event.pointerId);
+      updateCursor();
       redraw();
       return;
     }
@@ -645,9 +806,23 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     if (selectedTool === "eraser") {
       if (event.buttons === 1) {
         eraseAtPoint(point);
+        selectedItem = null;
         redraw();
       }
 
+      return;
+    }
+
+    if (selectedTool === "select") {
+      if (!selectedItem || !moveAnchorPoint || (event.buttons & 1) === 0) {
+        return;
+      }
+
+      const deltaX = point.x - moveAnchorPoint.x;
+      const deltaY = point.y - moveAnchorPoint.y;
+      moveSelectedItem(deltaX, deltaY);
+      moveAnchorPoint = point;
+      redraw();
       return;
     }
 
@@ -664,6 +839,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   const onPointerUp = (event: PointerEvent) => {
     currentStroke = null;
+    moveAnchorPoint = null;
     isPanning = false;
     updateCursor();
 
@@ -674,6 +850,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   const onPointerCancel = () => {
     currentStroke = null;
+    moveAnchorPoint = null;
     isPanning = false;
     updateCursor();
   };
@@ -708,11 +885,15 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     if (event.ctrlKey && event.key.toLowerCase() === "z") {
       event.preventDefault();
       strokes.pop();
+      if (selectedItem?.kind === "stroke" && selectedItem.index >= strokes.length) {
+        selectedItem = null;
+      }
       redraw();
     }
 
     if (!event.ctrlKey && event.key.toLowerCase() === "c") {
       strokes.length = 0;
+      selectedItem = null;
       redraw();
     }
   };
@@ -814,6 +995,8 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       }
 
       documentId = snapshot.document.id;
+      selectedItem = null;
+      moveAnchorPoint = null;
       strokes.length = 0;
       strokes.push(
         ...snapshot.document.strokes.map((stroke) => ({
