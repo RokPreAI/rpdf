@@ -2,7 +2,7 @@
 
 ## Current TODOs
 
-- [ ] 1 Storage add-save-load-project-files
+- [ ] 2 Canvas add-selection-and-move-tools
 
 ## Active TODOs
 
@@ -165,7 +165,7 @@ Notes:
 
 Priority: 1
 Area: Storage
-Status: pending
+Status: done
 Depends on: versioned-project-and-session-model
 
 Goal:

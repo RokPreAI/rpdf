@@ -1,4 +1,10 @@
-import type { WorkspaceController } from "../../app/types";
+import type {
+  CanvasBackgroundPattern,
+  CanvasDocument,
+  CanvasImagePlacementDocument,
+  WorkspaceController,
+  WorkspaceDocumentSnapshot,
+} from "../../app/types";
 
 type Point = {
   x: number;
@@ -23,6 +29,7 @@ type Camera = {
 
 type CanvasImage = {
   id: string;
+  assetPath: string;
   image: HTMLImageElement;
   x: number;
   y: number;
@@ -84,6 +91,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   const backgroundColor = "#1a1b26";
   const gridColor = "#292e42";
   const backgroundPattern: BackgroundPattern = "dotted";
+  let documentId: string = crypto.randomUUID();
 
   const camera: Camera = {
     x: container.clientWidth / 2,
@@ -434,7 +442,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     return Math.hypot(firstPoint.x - secondPoint.x, firstPoint.y - secondPoint.y);
   }
 
-  function addLoadedImage(image: HTMLImageElement, id: string) {
+  function addLoadedImage(image: HTMLImageElement, id: string, assetPath: string) {
     const { width, height } = getCanvasSize();
     const centerWorld = screenPointToWorld(width / 2, height / 2);
     const maxImageScreenWidth = width * 0.5;
@@ -444,6 +452,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     images.push({
       id,
+      assetPath,
       image,
       x: centerWorld.x - imageWidth / 2,
       y: centerWorld.y - imageHeight / 2,
@@ -454,35 +463,58 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     redraw();
   }
 
-  function addImageFromFile(file: File) {
-    const imageUrl = URL.createObjectURL(file);
-    const image = new Image();
+  function readFileAsDataUrl(file: File) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          resolve(reader.result);
+          return;
+        }
 
-    image.onload = () => {
-      addLoadedImage(image, file.name || crypto.randomUUID());
-      URL.revokeObjectURL(imageUrl);
-    };
+        reject(new Error("Could not read pasted image as a data URL."));
+      };
+      reader.onerror = () => {
+        reject(reader.error ?? new Error("Failed to read pasted image file."));
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
-    image.onerror = () => {
-      console.error("Failed to load pasted image file:", file);
-      URL.revokeObjectURL(imageUrl);
-    };
+  function loadImageFromSource(source: string) {
+    return new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
 
-    image.src = imageUrl;
+      image.onload = () => {
+        resolve(image);
+      };
+
+      image.onerror = () => {
+        reject(new Error(`Failed to load image source: ${source}`));
+      };
+
+      image.src = source;
+    });
+  }
+
+  async function addImageFromFile(file: File) {
+    try {
+      const source = await readFileAsDataUrl(file);
+      const image = await loadImageFromSource(source);
+      addLoadedImage(image, file.name || crypto.randomUUID(), source);
+    } catch (error) {
+      console.error("Failed to load pasted image file:", file, error);
+    }
   }
 
   function addImageFromSource(source: string) {
-    const image = new Image();
-
-    image.onload = () => {
-      addLoadedImage(image, crypto.randomUUID());
-    };
-
-    image.onerror = () => {
-      console.error("Failed to load image source:", source);
-    };
-
-    image.src = source;
+    loadImageFromSource(source)
+      .then((image) => {
+        addLoadedImage(image, crypto.randomUUID(), source);
+      })
+      .catch((error) => {
+        console.error("Failed to load image source:", source, error);
+      });
   }
 
   function looksLikeImageSource(source: string) {
@@ -706,7 +738,97 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   canvas.addEventListener("contextmenu", onContextMenu);
   updateCursor();
 
+  function toCanvasBackgroundPattern(pattern: BackgroundPattern): CanvasBackgroundPattern {
+    if (pattern === "dotted") {
+      return "dots";
+    }
+
+    if (pattern === "grid") {
+      return "squares";
+    }
+
+    if (pattern === "hlines" || pattern === "vlines") {
+      return "lines";
+    }
+
+    return "none";
+  }
+
+  async function importImages(imagePlacements: CanvasImagePlacementDocument[]) {
+    const loadedImages = await Promise.all(
+      imagePlacements.map(async (placement) => {
+        const image = await loadImageFromSource(placement.assetPath);
+
+        return {
+          id: placement.id,
+          assetPath: placement.assetPath,
+          image,
+          x: placement.x,
+          y: placement.y,
+          width: placement.width,
+          height: placement.height,
+        } satisfies CanvasImage;
+      }),
+    );
+
+    images.length = 0;
+    images.push(...loadedImages);
+  }
+
   return {
+    exportDocument(): WorkspaceDocumentSnapshot {
+      const document: CanvasDocument = {
+        version: {
+          major: 1,
+          minor: 0,
+        },
+        id: documentId,
+        backgroundPattern: toCanvasBackgroundPattern(backgroundPattern),
+        strokes: strokes.map((stroke) => ({
+          color: stroke.color,
+          width: stroke.baseWidth,
+          points: stroke.points.map((point) => ({
+            x: point.x,
+            y: point.y,
+            pressure: point.pressure,
+          })),
+        })),
+        images: images.map((image) => ({
+          id: image.id,
+          assetPath: image.assetPath,
+          x: image.x,
+          y: image.y,
+          width: image.width,
+          height: image.height,
+        })),
+      };
+
+      return {
+        kind: "canvas",
+        document,
+      };
+    },
+    async importDocument(snapshot) {
+      if (snapshot.kind !== "canvas") {
+        throw new Error("Canvas workspace cannot load a non-canvas document.");
+      }
+
+      documentId = snapshot.document.id;
+      strokes.length = 0;
+      strokes.push(
+        ...snapshot.document.strokes.map((stroke) => ({
+          color: stroke.color,
+          baseWidth: stroke.width,
+          points: stroke.points.map((point) => ({
+            x: point.x,
+            y: point.y,
+            pressure: point.pressure,
+          })),
+        })),
+      );
+      await importImages(snapshot.document.images);
+      redraw();
+    },
     destroy() {
       window.removeEventListener("paste", onPaste);
       window.removeEventListener("keydown", onKeyDown);

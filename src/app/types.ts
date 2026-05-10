@@ -20,6 +20,42 @@ export type AppBootstrap = {
   reliabilityStates: ReadingReliabilityState[];
 };
 
+export type DocumentVersion = {
+  major: number;
+  minor: number;
+};
+
+export type CanvasBackgroundPattern = "dots" | "lines" | "squares" | "none";
+
+export type CanvasPointDocument = {
+  x: number;
+  y: number;
+  pressure: number;
+};
+
+export type CanvasStrokeDocument = {
+  color: string;
+  width: number;
+  points: CanvasPointDocument[];
+};
+
+export type CanvasImagePlacementDocument = {
+  id: string;
+  assetPath: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type CanvasDocument = {
+  version: DocumentVersion;
+  id: string;
+  backgroundPattern: CanvasBackgroundPattern;
+  strokes: CanvasStrokeDocument[];
+  images: CanvasImagePlacementDocument[];
+};
+
 export type OpenPdfDocumentRequest = {
   documentPath: string;
 };
@@ -67,6 +103,65 @@ export type PageTextExtraction = {
   spans: TextSpan[];
 };
 
+export type PdfPointDocument = {
+  x: number;
+  y: number;
+};
+
+export type PdfStrokeAnnotationDocument = {
+  color: string;
+  width: number;
+  points: PdfPointDocument[];
+};
+
+export type PdfTextNoteDocument = {
+  text: string;
+  x: number;
+  y: number;
+};
+
+export type PdfPageAnnotationLayerDocument = {
+  pageIndex: number;
+  strokes: PdfStrokeAnnotationDocument[];
+  notes: PdfTextNoteDocument[];
+};
+
+export type PdfRecolorSettingsDocument = {
+  enabled: boolean;
+  foreground: string;
+  background: string;
+};
+
+export type PdfPageReadingCacheDocument = {
+  pageIndex: number;
+  reliability: ReadingReliabilityState;
+  sourceKind: "native" | "ocr";
+  cacheKey: string | null;
+};
+
+export type PdfStudyDocument = {
+  version: DocumentVersion;
+  id: string;
+  sourcePdfPath: string;
+  pageCount: number | null;
+  currentPageIndex: number;
+  annotations: PdfPageAnnotationLayerDocument[];
+  recolor: PdfRecolorSettingsDocument;
+  readingCache: PdfPageReadingCacheDocument[];
+};
+
+export type WorkspaceDocumentSnapshot =
+  | {
+    kind: "canvas";
+    document: CanvasDocument;
+  }
+  | {
+    kind: "pdf";
+    document: PdfStudyDocument;
+  };
+
 export type WorkspaceController = {
   destroy(): void;
+  exportDocument(): WorkspaceDocumentSnapshot;
+  importDocument(snapshot: WorkspaceDocumentSnapshot): Promise<void>;
 };

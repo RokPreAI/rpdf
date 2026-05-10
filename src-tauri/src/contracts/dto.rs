@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::domain::canvas::CanvasDocument;
+use crate::domain::pdf::PdfStudyDocument;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AppModeDto {
@@ -48,6 +51,32 @@ pub struct OpenPdfDocumentResponseDto {
     pub page_count: Option<u32>,
     pub backend_ready: bool,
     pub notes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveCanvasProjectRequestDto {
+    pub file_path: String,
+    pub document: CanvasDocument,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadCanvasProjectRequestDto {
+    pub file_path: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavePdfStudySessionRequestDto {
+    pub file_path: String,
+    pub document: PdfStudyDocument,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadPdfStudySessionRequestDto {
+    pub file_path: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

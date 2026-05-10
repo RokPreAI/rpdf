@@ -6,11 +6,14 @@ import type {
   OpenPdfDocumentRequest,
   OpenPdfDocumentResponse,
   PageTextExtraction,
+  PdfPageAnnotationLayerDocument,
+  PdfStudyDocument,
   PdfBackendStatus,
   ReadingReliabilityState,
   RenderPdfPageRequest,
   RenderPdfPageResponse,
   WorkspaceController,
+  WorkspaceDocumentSnapshot,
 } from "../../app/types";
 
 type Point = {
@@ -148,6 +151,7 @@ export function mountPdfWorkspace(
   const annotationContext = context;
   const annotationsByPage = new Map<number, AnnotationStroke[]>();
   let currentStroke: AnnotationStroke | null = null;
+  let documentId: string = crypto.randomUUID();
 
   function getCurrentPageStrokes() {
     const strokes = annotationsByPage.get(state.pageIndex);
@@ -257,6 +261,7 @@ export function mountPdfWorkspace(
       renderPlaceholder.hidden = false;
       renderPlaceholder.textContent = "The PDF page stage is ready, but no document is open yet.";
       resizeAnnotationLayer();
+      redrawAnnotations();
       return;
     }
 
@@ -358,6 +363,8 @@ export function mountPdfWorkspace(
           documentPath,
         } satisfies OpenPdfDocumentRequest,
       });
+      documentId = crypto.randomUUID();
+      annotationsByPage.clear();
       state.pageIndex = 0;
       backendName.textContent = `${bootstrap?.activePdfBackend.backendName ?? "PDF backend"}: ${state.document.backendReady ? "ready" : "boundary only"}`;
       await refreshPageState();
@@ -447,6 +454,88 @@ export function mountPdfWorkspace(
   renderDocumentState();
 
   return {
+    exportDocument(): WorkspaceDocumentSnapshot {
+      const annotations: PdfPageAnnotationLayerDocument[] = Array.from(annotationsByPage.entries())
+        .map(([pageIndex, strokes]) => ({
+          pageIndex,
+          strokes: strokes.map((stroke) => ({
+            color: stroke.color,
+            width: stroke.width,
+            points: stroke.points.map((point) => ({
+              x: point.x,
+              y: point.y,
+            })),
+          })),
+          notes: [],
+        }))
+        .sort((firstLayer, secondLayer) => firstLayer.pageIndex - secondLayer.pageIndex);
+
+      const readingCache = state.extraction ? [{
+        pageIndex: state.extraction.pageIndex,
+        reliability: state.extraction.reliability,
+        sourceKind: (state.extraction.reliability.startsWith("ocr") ? "ocr" : "native") as "ocr" | "native",
+        cacheKey: null,
+      }] : [];
+
+      const document: PdfStudyDocument = {
+        version: {
+          major: 1,
+          minor: 0,
+        },
+        id: documentId,
+        sourcePdfPath: state.document?.documentPath ?? "",
+        pageCount: state.document?.pageCount ?? null,
+        currentPageIndex: state.pageIndex,
+        annotations,
+        recolor: {
+          enabled: false,
+          foreground: "#c0caf5",
+          background: "#1a1b26",
+        },
+        readingCache,
+      };
+
+      return {
+        kind: "pdf",
+        document,
+      };
+    },
+    async importDocument(snapshot) {
+      if (snapshot.kind !== "pdf") {
+        throw new Error("PDF workspace cannot load a non-PDF study session.");
+      }
+
+      documentId = snapshot.document.id;
+      annotationsByPage.clear();
+      for (const layer of snapshot.document.annotations) {
+        annotationsByPage.set(
+          layer.pageIndex,
+          layer.strokes.map((stroke) => ({
+            color: stroke.color,
+            width: stroke.width,
+            points: stroke.points.map((point) => ({
+              x: point.x,
+              y: point.y,
+            })),
+          })),
+        );
+      }
+
+      state.document = {
+        documentPath: snapshot.document.sourcePdfPath,
+        documentName: fileNameFromPath(snapshot.document.sourcePdfPath),
+        pageCount: snapshot.document.pageCount,
+        backendReady: bootstrap?.activePdfBackend.configured ?? false,
+        notes: bootstrap?.activePdfBackend.notes ?? [],
+      };
+      state.pageIndex = snapshot.document.currentPageIndex;
+      state.pageRender = null;
+      state.pageError = null;
+      state.extraction = null;
+      pathInput.value = snapshot.document.sourcePdfPath;
+      await refreshPageState();
+      redrawAnnotations();
+    },
     destroy() {
       window.removeEventListener("resize", resizeAnnotationLayer);
       annotationLayer.removeEventListener("pointerdown", onPointerDown);
@@ -463,6 +552,11 @@ function escapeHtml(value: string) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+function fileNameFromPath(value: string) {
+  const segments = value.split(/[/\\]/);
+  return segments[segments.length - 1] || value;
 }
 
 function requireElement<T extends HTMLElement>(root: ParentNode, selector: string) {

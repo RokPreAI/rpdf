@@ -6,7 +6,11 @@ mod infrastructure;
 use app::commands::{
     extract_pdf_page_text,
     get_app_bootstrap,
+    load_canvas_project,
+    load_pdf_study_session,
     open_pdf_document,
+    save_canvas_project,
+    save_pdf_study_session,
     get_pdf_backend_status,
     render_pdf_page,
 };
@@ -21,6 +25,10 @@ pub fn run() {
             get_app_bootstrap,
             get_pdf_backend_status,
             open_pdf_document,
+            save_canvas_project,
+            load_canvas_project,
+            save_pdf_study_session,
+            load_pdf_study_session,
             render_pdf_page,
             extract_pdf_page_text
         ])

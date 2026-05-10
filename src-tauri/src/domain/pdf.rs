@@ -9,6 +9,7 @@ pub struct PdfStudyDocument {
     pub id: String,
     pub source_pdf_path: String,
     pub page_count: Option<u32>,
+    pub current_page_index: u32,
     pub annotations: Vec<PdfPageAnnotationLayer>,
     pub recolor: PdfRecolorSettings,
     pub reading_cache: Vec<PdfPageReadingCache>,

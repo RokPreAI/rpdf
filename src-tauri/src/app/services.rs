@@ -2,14 +2,20 @@ use crate::contracts::dto::{
     AppBootstrapDto,
     AppModeDto,
     ExtractPdfTextRequestDto,
+    LoadCanvasProjectRequestDto,
+    LoadPdfStudySessionRequestDto,
     OpenPdfDocumentRequestDto,
     OpenPdfDocumentResponseDto,
     PageTextExtractionDto,
     PdfBackendStatusDto,
     ReadingReliabilityStateDto,
+    SaveCanvasProjectRequestDto,
+    SavePdfStudySessionRequestDto,
     RenderPdfPageRequestDto,
     RenderPdfPageResponseDto,
 };
+use crate::domain::canvas::CanvasDocument;
+use crate::domain::pdf::PdfStudyDocument;
 use crate::infrastructure::pdf_engine::{PdfEngineAdapter, PdfiumEngineAdapter};
 
 pub struct AppServices {
@@ -84,6 +90,34 @@ impl AppServices {
         })
     }
 
+    pub fn save_canvas_project(
+        &self,
+        request: &SaveCanvasProjectRequestDto,
+    ) -> Result<(), String> {
+        write_json_document(&request.file_path, &request.document)
+    }
+
+    pub fn load_canvas_project(
+        &self,
+        request: &LoadCanvasProjectRequestDto,
+    ) -> Result<CanvasDocument, String> {
+        read_json_document(&request.file_path)
+    }
+
+    pub fn save_pdf_study_session(
+        &self,
+        request: &SavePdfStudySessionRequestDto,
+    ) -> Result<(), String> {
+        write_json_document(&request.file_path, &request.document)
+    }
+
+    pub fn load_pdf_study_session(
+        &self,
+        request: &LoadPdfStudySessionRequestDto,
+    ) -> Result<PdfStudyDocument, String> {
+        read_json_document(&request.file_path)
+    }
+
     pub fn render_pdf_page(
         &self,
         request: &RenderPdfPageRequestDto,
@@ -97,4 +131,50 @@ impl AppServices {
     ) -> Result<PageTextExtractionDto, String> {
         self.pdf_engine.extract_page_text(request)
     }
+}
+
+fn write_json_document<T>(file_path: &str, document: &T) -> Result<(), String>
+where
+    T: serde::Serialize,
+{
+    let normalized_path = file_path.trim();
+
+    if normalized_path.is_empty() {
+        return Err("A file path is required.".to_string());
+    }
+
+    let path = std::path::Path::new(normalized_path);
+
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("Could not create parent directories: {error}"))?;
+        }
+    }
+
+    let serialized = serde_json::to_string_pretty(document)
+        .map_err(|error| format!("Could not serialize document: {error}"))?;
+
+    std::fs::write(path, serialized)
+        .map_err(|error| format!("Could not write document file: {error}"))?;
+
+    Ok(())
+}
+
+fn read_json_document<T>(file_path: &str) -> Result<T, String>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    let normalized_path = file_path.trim();
+
+    if normalized_path.is_empty() {
+        return Err("A file path is required.".to_string());
+    }
+
+    let path = std::path::Path::new(normalized_path);
+    let contents = std::fs::read_to_string(path)
+        .map_err(|error| format!("Could not read document file: {error}"))?;
+
+    serde_json::from_str(&contents)
+        .map_err(|error| format!("Could not deserialize document file: {error}"))
 }

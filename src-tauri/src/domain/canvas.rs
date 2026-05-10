@@ -35,6 +35,7 @@ pub struct CanvasStroke {
 pub struct CanvasPoint {
     pub x: f32,
     pub y: f32,
+    pub pressure: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
