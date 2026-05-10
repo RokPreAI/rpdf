@@ -12,6 +12,8 @@ pub struct CanvasDocument {
     pub id: String,
     pub background_pattern: BackgroundPattern,
     pub strokes: Vec<CanvasStroke>,
+    #[serde(default)]
+    pub shapes: Vec<CanvasShape>,
     pub images: Vec<CanvasImagePlacement>,
 }
 
@@ -28,7 +30,35 @@ pub enum BackgroundPattern {
 pub struct CanvasStroke {
     pub color: String,
     pub width: f32,
+    #[serde(default)]
+    pub order: Option<u32>,
     pub points: Vec<CanvasPoint>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CanvasShapeKind {
+    Line,
+    Rectangle,
+    Ellipse,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CanvasShapePoint {
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CanvasShape {
+    pub id: String,
+    pub kind: CanvasShapeKind,
+    pub color: String,
+    pub width: f32,
+    #[serde(default)]
+    pub order: Option<u32>,
+    pub start: CanvasShapePoint,
+    pub end: CanvasShapePoint,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

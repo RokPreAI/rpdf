@@ -2,11 +2,10 @@
 
 ## Current TODOs
 
-- [ ] 3 Canvas add-draw-shapes
+- [ ] 2 Reading add-tts-and-reliability-pipeline
 
 ## Active TODOs
 
-- [ ] 2 Reading add-tts-and-reliability-pipeline
 - [ ] 3 PDF add-pdf-page-import-and-recolor
 - [ ] 3 UX add-config-and-toolbar-icons
 
@@ -16,6 +15,7 @@
 - [x] 0 Storage versioned-project-and-session-model
 - [x] 1 App split-main-into-shell-and-modes
 - [x] 1 Canvas add-tablet-pressure-and-stroke-width
+- [x] 3 Canvas add-draw-shapes
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste
@@ -321,7 +321,7 @@ Notes:
 
 Priority: 3
 Area: Canvas
-Status: pending
+Status: done
 Depends on: add-selection-and-move-tools
 
 Goal:

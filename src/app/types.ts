@@ -36,7 +36,26 @@ export type CanvasPointDocument = {
 export type CanvasStrokeDocument = {
   color: string;
   width: number;
+  order?: number;
   points: CanvasPointDocument[];
+};
+
+export type CanvasShapeKindDocument = "line" | "rectangle" | "ellipse";
+
+export type CanvasShapeDocument = {
+  id: string;
+  kind: CanvasShapeKindDocument;
+  color: string;
+  width: number;
+  order?: number;
+  start: {
+    x: number;
+    y: number;
+  };
+  end: {
+    x: number;
+    y: number;
+  };
 };
 
 export type CanvasImagePlacementDocument = {
@@ -53,6 +72,7 @@ export type CanvasDocument = {
   id: string;
   backgroundPattern: CanvasBackgroundPattern;
   strokes: CanvasStrokeDocument[];
+  shapes: CanvasShapeDocument[];
   images: CanvasImagePlacementDocument[];
 };
 

@@ -2,6 +2,8 @@ import type {
   CanvasBackgroundPattern,
   CanvasDocument,
   CanvasImagePlacementDocument,
+  CanvasShapeDocument,
+  CanvasShapeKindDocument,
   WorkspaceController,
   WorkspaceDocumentSnapshot,
 } from "../../app/types";
@@ -16,10 +18,26 @@ type StrokePoint = Point & {
 };
 
 type Stroke = {
-  points: StrokePoint[];
+  id: string;
   color: string;
   baseWidth: number;
+  order: number;
+  points: StrokePoint[];
 };
+
+type ShapeKind = CanvasShapeKindDocument;
+
+type Shape = {
+  id: string;
+  kind: ShapeKind;
+  color: string;
+  baseWidth: number;
+  order: number;
+  start: Point;
+  end: Point;
+};
+
+type VectorItem = Stroke | Shape;
 
 type Camera = {
   x: number;
@@ -43,11 +61,15 @@ type SelectionTarget =
     index: number;
   }
   | {
+    kind: "shape";
+    index: number;
+  }
+  | {
     kind: "image";
     index: number;
   };
 
-type Tool = "pen" | "select" | "pan" | "eraser";
+type Tool = "pen" | "shape" | "select" | "pan" | "eraser";
 type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
@@ -58,6 +80,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <div class="canvas-toolbar">
         Left drag: draw/select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
         <div id="selected-tool"></div>
+        <div id="selected-shape-kind"></div>
         <div id="selected-color"></div>
       </div>
 
@@ -68,6 +91,15 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
           <output id="stroke-width-value">3px</output>
         </label>
 
+        <label class="shape-kind-control" for="shape-kind">
+          <span>Shape</span>
+          <select id="shape-kind">
+            <option value="rectangle">Rectangle</option>
+            <option value="ellipse">Ellipse</option>
+            <option value="line">Line</option>
+          </select>
+        </label>
+
         <div class="canvas-export-panel">
           <button id="svg-export-button" type="button">Export SVG</button>
           <div id="svg-export-status" class="svg-export-status"></div>
@@ -76,6 +108,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
       <div class="canvas-pickers">
         <button class="tool-picker active" data-tool="pen" type="button">P</button>
+        <button class="tool-picker" data-tool="shape" type="button">H</button>
         <button class="tool-picker" data-tool="select" type="button">S</button>
         <button class="tool-picker" data-tool="pan" type="button">M</button>
         <button class="tool-picker" data-tool="eraser" type="button">E</button>
@@ -94,7 +127,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   `;
 
   const canvas = requireElement<HTMLCanvasElement>(container, ".canvas-surface");
-
   const context = canvas.getContext("2d");
 
   if (!context) {
@@ -103,11 +135,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   const ctx = context;
   const strokes: Stroke[] = [];
+  const shapes: Shape[] = [];
   const images: CanvasImage[] = [];
   const backgroundColor = "#1a1b26";
   const gridColor = "#292e42";
   const backgroundPattern: BackgroundPattern = "dotted";
   let documentId: string = crypto.randomUUID();
+  let nextVectorOrder = 1;
 
   const camera: Camera = {
     x: container.clientWidth / 2,
@@ -116,8 +150,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   };
 
   let selectedTool: Tool = "pen";
+  let selectedShapeKind: ShapeKind = "rectangle";
   let strokeColor = readCssVariable("--fg") || "#c0caf5";
   let currentStroke: Stroke | null = null;
+  let currentShape: Shape | null = null;
   let selectedItem: SelectionTarget | null = null;
   let moveAnchorPoint: Point | null = null;
   let isPanning = false;
@@ -152,12 +188,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   function screenToWorld(clientX: number, clientY: number): Point {
     const rect = canvas.getBoundingClientRect();
-    const screenX = clientX - rect.left;
-    const screenY = clientY - rect.top;
 
     return {
-      x: (screenX - camera.x) / camera.scale,
-      y: (screenY - camera.y) / camera.scale,
+      x: (clientX - rect.left - camera.x) / camera.scale,
+      y: (clientY - rect.top - camera.y) / camera.scale,
     };
   }
 
@@ -178,7 +212,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return;
     }
 
-    if (selectedTool === "pen") {
+    if (selectedTool === "pen" || selectedTool === "shape") {
       canvas.style.cursor = "crosshair";
     } else if (selectedTool === "select") {
       canvas.style.cursor = selectedItem ? "move" : "default";
@@ -194,6 +228,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     if (toolIndicator) {
       toolIndicator.textContent = tool;
+    }
+  }
+
+  function updateShapeKindIndicator(shapeKind: ShapeKind) {
+    const shapeIndicator = container.querySelector<HTMLElement>("#selected-shape-kind");
+
+    if (shapeIndicator) {
+      shapeIndicator.textContent = selectedTool === "shape" ? shapeKind : "";
     }
   }
 
@@ -216,6 +258,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
     const strokeWidthInput = requireElement<HTMLInputElement>(container, "#stroke-width");
     const strokeWidthValue = requireElement<HTMLOutputElement>(container, "#stroke-width-value");
+    const shapeKindSelect = requireElement<HTMLSelectElement>(container, "#shape-kind");
     const svgExportButton = requireElement<HTMLButtonElement>(container, "#svg-export-button");
 
     for (const button of colorButtons) {
@@ -237,6 +280,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
         updateColorIndicator(strokeColor);
         updateToolIndicator(selectedTool);
+        updateShapeKindIndicator(selectedShapeKind);
         setActiveToolButton(toolButtons, selectedTool);
 
         for (const colorButton of colorButtons) {
@@ -257,18 +301,20 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
         const tool = button.dataset.tool;
 
-        if (tool !== "pen" && tool !== "select" && tool !== "pan" && tool !== "eraser") {
+        if (tool !== "pen" && tool !== "shape" && tool !== "select" && tool !== "pan" && tool !== "eraser") {
           return;
         }
 
         selectedTool = tool;
         updateToolIndicator(selectedTool);
+        updateShapeKindIndicator(selectedShapeKind);
         setActiveToolButton(toolButtons, selectedTool);
         updateCursor();
       });
     }
 
     updateToolIndicator(selectedTool);
+    updateShapeKindIndicator(selectedShapeKind);
     updateColorIndicator(strokeColor);
     setActiveToolButton(toolButtons, selectedTool);
     updateCursor();
@@ -276,6 +322,15 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     strokeWidthInput.addEventListener("input", () => {
       baseStrokeWidth = Number(strokeWidthInput.value);
       strokeWidthValue.textContent = `${baseStrokeWidth}px`;
+    });
+
+    shapeKindSelect.addEventListener("change", () => {
+      if (shapeKindSelect.value !== "rectangle" && shapeKindSelect.value !== "ellipse" && shapeKindSelect.value !== "line") {
+        return;
+      }
+
+      selectedShapeKind = shapeKindSelect.value;
+      updateShapeKindIndicator(selectedShapeKind);
     });
 
     svgExportButton.addEventListener("click", () => {
@@ -296,9 +351,8 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   function drawDottedGrid(startX: number, startY: number, right: number, bottom: number, gridStep: number) {
     const columnCount = Math.floor((right - startX) / gridStep) + 1;
     const rowCount = Math.floor((bottom - startY) / gridStep) + 1;
-    const dotCount = columnCount * rowCount;
 
-    if (dotCount > 5000) {
+    if (columnCount * rowCount > 5000) {
       return;
     }
 
@@ -376,6 +430,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.restore();
   }
 
+  function calculateRenderedStrokeWidth(strokeWidth: number, pressure: number) {
+    return Math.max(1, strokeWidth * pressure);
+  }
+
   function drawStroke(stroke: Stroke) {
     if (stroke.points.length === 0) {
       return;
@@ -415,8 +473,58 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.restore();
   }
 
-  function calculateRenderedStrokeWidth(strokeWidth: number, pressure: number) {
-    return Math.max(1, strokeWidth * pressure);
+  function shapeBounds(shape: Shape) {
+    const minX = Math.min(shape.start.x, shape.end.x);
+    const minY = Math.min(shape.start.y, shape.end.y);
+    const maxX = Math.max(shape.start.x, shape.end.x);
+    const maxY = Math.max(shape.start.y, shape.end.y);
+    const padding = shape.baseWidth;
+
+    return {
+      x: minX - padding,
+      y: minY - padding,
+      width: Math.max(1, maxX - minX + padding * 2),
+      height: Math.max(1, maxY - minY + padding * 2),
+      minX,
+      minY,
+      maxX,
+      maxY,
+    };
+  }
+
+  function drawShape(shape: Shape) {
+    const bounds = shapeBounds(shape);
+
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.scale, camera.scale);
+    ctx.strokeStyle = shape.color;
+    ctx.lineWidth = shape.baseWidth / camera.scale;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+
+    if (shape.kind === "line") {
+      ctx.moveTo(shape.start.x, shape.start.y);
+      ctx.lineTo(shape.end.x, shape.end.y);
+    } else if (shape.kind === "rectangle") {
+      ctx.rect(
+        bounds.minX,
+        bounds.minY,
+        Math.max(1, bounds.maxX - bounds.minX),
+        Math.max(1, bounds.maxY - bounds.minY),
+      );
+    } else {
+      const centerX = (shape.start.x + shape.end.x) / 2;
+      const centerY = (shape.start.y + shape.end.y) / 2;
+      const radiusX = Math.max(0.5, Math.abs(shape.end.x - shape.start.x) / 2);
+      const radiusY = Math.max(0.5, Math.abs(shape.end.y - shape.start.y) / 2);
+
+      ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
+    }
+
+    ctx.stroke();
+    ctx.restore();
   }
 
   function drawImages() {
@@ -437,6 +545,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.restore();
   }
 
+  function orderedVectorItems() {
+    return [...strokes, ...shapes].sort((firstItem, secondItem) => firstItem.order - secondItem.order);
+  }
+
   function drawSelectionOverlay() {
     if (!selectedItem) {
       return;
@@ -454,6 +566,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
       if (image) {
         ctx.strokeRect(image.x, image.y, image.width, image.height);
+      }
+    } else if (selectedItem.kind === "shape") {
+      const shape = shapes[selectedItem.index];
+
+      if (shape) {
+        const bounds = shapeBounds(shape);
+        ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
       }
     } else {
       const stroke = strokes[selectedItem.index];
@@ -475,7 +594,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return {
         eligible: false,
         message: "SVG export is disabled for raster image selections.",
-        strokes: [] as Stroke[],
+        vectors: [] as VectorItem[],
       };
     }
 
@@ -485,34 +604,50 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return stroke ? {
         eligible: true,
         message: "SVG export will include the selected stroke only.",
-        strokes: [stroke],
+        vectors: [stroke] as VectorItem[],
       } : {
         eligible: false,
         message: "Selected stroke is no longer available.",
-        strokes: [] as Stroke[],
+        vectors: [] as VectorItem[],
+      };
+    }
+
+    if (selectedItem?.kind === "shape") {
+      const shape = shapes[selectedItem.index];
+
+      return shape ? {
+        eligible: true,
+        message: "SVG export will include the selected shape only.",
+        vectors: [shape] as VectorItem[],
+      } : {
+        eligible: false,
+        message: "Selected shape is no longer available.",
+        vectors: [] as VectorItem[],
       };
     }
 
     if (images.length > 0) {
       return {
         eligible: false,
-        message: "SVG export is disabled while the canvas contains raster images. Select a stroke or remove images.",
-        strokes: [] as Stroke[],
+        message: "SVG export is disabled while the canvas contains raster images. Select a vector item or remove images.",
+        vectors: [] as VectorItem[],
       };
     }
 
-    if (strokes.length === 0) {
+    const vectors = orderedVectorItems();
+
+    if (vectors.length === 0) {
       return {
         eligible: false,
-        message: "Draw at least one stroke before exporting SVG.",
-        strokes: [] as Stroke[],
+        message: "Draw at least one stroke or shape before exporting SVG.",
+        vectors: [] as VectorItem[],
       };
     }
 
     return {
       eligible: true,
       message: "SVG export will include the full vector canvas.",
-      strokes,
+      vectors,
     };
   }
 
@@ -534,16 +669,87 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     drawGrid();
     drawImages();
 
-    for (const stroke of strokes) {
-      drawStroke(stroke);
+    for (const vectorItem of orderedVectorItems()) {
+      if ("points" in vectorItem) {
+        drawStroke(vectorItem);
+      } else {
+        drawShape(vectorItem);
+      }
     }
 
     drawSelectionOverlay();
     updateSvgExportState();
   }
 
+  function distanceBetweenPoints(firstPoint: Point, secondPoint: Point) {
+    return Math.hypot(firstPoint.x - secondPoint.x, firstPoint.y - secondPoint.y);
+  }
+
+  function pointToSegmentDistance(point: Point, segmentStart: Point, segmentEnd: Point) {
+    const segmentLengthSquared = (segmentEnd.x - segmentStart.x) ** 2 + (segmentEnd.y - segmentStart.y) ** 2;
+
+    if (segmentLengthSquared === 0) {
+      return distanceBetweenPoints(point, segmentStart);
+    }
+
+    const projection = (
+      ((point.x - segmentStart.x) * (segmentEnd.x - segmentStart.x))
+      + ((point.y - segmentStart.y) * (segmentEnd.y - segmentStart.y))
+    ) / segmentLengthSquared;
+    const clampedProjection = clamp(projection, 0, 1);
+
+    return distanceBetweenPoints(point, {
+      x: segmentStart.x + (segmentEnd.x - segmentStart.x) * clampedProjection,
+      y: segmentStart.y + (segmentEnd.y - segmentStart.y) * clampedProjection,
+    });
+  }
+
+  function shapeContainsPoint(shape: Shape, point: Point, tolerance: number) {
+    if (shape.kind === "line") {
+      return pointToSegmentDistance(point, shape.start, shape.end) <= tolerance;
+    }
+
+    if (shape.kind === "rectangle") {
+      const bounds = shapeBounds(shape);
+      const insideBounds = point.x >= bounds.minX - tolerance
+        && point.x <= bounds.maxX + tolerance
+        && point.y >= bounds.minY - tolerance
+        && point.y <= bounds.maxY + tolerance;
+
+      if (!insideBounds) {
+        return false;
+      }
+
+      const nearLeftOrRight = Math.abs(point.x - bounds.minX) <= tolerance || Math.abs(point.x - bounds.maxX) <= tolerance;
+      const nearTopOrBottom = Math.abs(point.y - bounds.minY) <= tolerance || Math.abs(point.y - bounds.maxY) <= tolerance;
+      const betweenVerticalEdges = point.y >= bounds.minY - tolerance && point.y <= bounds.maxY + tolerance;
+      const betweenHorizontalEdges = point.x >= bounds.minX - tolerance && point.x <= bounds.maxX + tolerance;
+
+      return (nearLeftOrRight && betweenVerticalEdges) || (nearTopOrBottom && betweenHorizontalEdges);
+    }
+
+    const centerX = (shape.start.x + shape.end.x) / 2;
+    const centerY = (shape.start.y + shape.end.y) / 2;
+    const radiusX = Math.max(0.5, Math.abs(shape.end.x - shape.start.x) / 2);
+    const radiusY = Math.max(0.5, Math.abs(shape.end.y - shape.start.y) / 2);
+    const outerDistance = (((point.x - centerX) / (radiusX + tolerance)) ** 2)
+      + (((point.y - centerY) / (radiusY + tolerance)) ** 2);
+    const innerDistance = radiusX <= tolerance || radiusY <= tolerance
+      ? 0
+      : (((point.x - centerX) / Math.max(0.5, radiusX - tolerance)) ** 2)
+      + (((point.y - centerY) / Math.max(0.5, radiusY - tolerance)) ** 2);
+
+    return outerDistance <= 1.15 && innerDistance >= 0.85;
+  }
+
   function eraseAtPoint(point: Point) {
     const eraserRadius = 12 / camera.scale;
+
+    for (let shapeIndex = shapes.length - 1; shapeIndex >= 0; shapeIndex -= 1) {
+      if (shapeContainsPoint(shapes[shapeIndex], point, eraserRadius)) {
+        shapes.splice(shapeIndex, 1);
+      }
+    }
 
     for (let strokeIndex = strokes.length - 1; strokeIndex >= 0; strokeIndex -= 1) {
       const stroke = strokes[strokeIndex];
@@ -552,10 +758,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         strokes.splice(strokeIndex, 1);
       }
     }
-  }
-
-  function distanceBetweenPoints(firstPoint: Point, secondPoint: Point) {
-    return Math.hypot(firstPoint.x - secondPoint.x, firstPoint.y - secondPoint.y);
   }
 
   function getStrokeBounds(stroke: Stroke) {
@@ -600,14 +802,48 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     };
   }
 
-  function createSvgMarkup(exportStrokes: Stroke[]) {
+  function vectorItemBounds(vectorItem: VectorItem) {
+    if ("points" in vectorItem) {
+      return strokeExportBounds(vectorItem);
+    }
+
+    const bounds = shapeBounds(vectorItem);
+
+    return {
+      minX: bounds.x,
+      minY: bounds.y,
+      maxX: bounds.x + bounds.width,
+      maxY: bounds.y + bounds.height,
+    };
+  }
+
+  function createSvgShapeMarkup(shape: Shape, minX: number, minY: number) {
+    if (shape.kind === "line") {
+      return `<line x1="${shape.start.x - minX}" y1="${shape.start.y - minY}" x2="${shape.end.x - minX}" y2="${shape.end.y - minY}" stroke="${escapeXml(shape.color)}" stroke-width="${shape.baseWidth}" stroke-linecap="round" />`;
+    }
+
+    if (shape.kind === "rectangle") {
+      const bounds = shapeBounds(shape);
+
+      return `<rect x="${bounds.minX - minX}" y="${bounds.minY - minY}" width="${Math.max(1, bounds.maxX - bounds.minX)}" height="${Math.max(1, bounds.maxY - bounds.minY)}" fill="none" stroke="${escapeXml(shape.color)}" stroke-width="${shape.baseWidth}" rx="${Math.min(12, shape.baseWidth * 1.5)}" ry="${Math.min(12, shape.baseWidth * 1.5)}" />`;
+    }
+
+    const centerX = (shape.start.x + shape.end.x) / 2;
+    const centerY = (shape.start.y + shape.end.y) / 2;
+    const radiusX = Math.max(0.5, Math.abs(shape.end.x - shape.start.x) / 2);
+    const radiusY = Math.max(0.5, Math.abs(shape.end.y - shape.start.y) / 2);
+
+    return `<ellipse cx="${centerX - minX}" cy="${centerY - minY}" rx="${radiusX}" ry="${radiusY}" fill="none" stroke="${escapeXml(shape.color)}" stroke-width="${shape.baseWidth}" />`;
+  }
+
+  function createSvgMarkup(exportVectors: VectorItem[]) {
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
 
-    for (const stroke of exportStrokes) {
-      const bounds = strokeExportBounds(stroke);
+    for (const vectorItem of exportVectors) {
+      const bounds = vectorItemBounds(vectorItem);
 
       if (!bounds) {
         continue;
@@ -620,27 +856,31 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
 
     if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-      throw new Error("No exportable vector strokes were available.");
+      throw new Error("No exportable vector items were available.");
     }
 
     const width = Math.max(1, maxX - minX);
     const height = Math.max(1, maxY - minY);
 
-    const paths = exportStrokes.map((stroke) => {
-      if (stroke.points.length === 0) {
-        return "";
+    const items = exportVectors.map((vectorItem) => {
+      if ("points" in vectorItem) {
+        if (vectorItem.points.length === 0) {
+          return "";
+        }
+
+        const commands = vectorItem.points
+          .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x - minX} ${point.y - minY}`)
+          .join(" ");
+
+        return `<path d="${commands}" fill="none" stroke="${escapeXml(vectorItem.color)}" stroke-width="${vectorItem.baseWidth}" stroke-linecap="round" stroke-linejoin="round" />`;
       }
 
-      const commands = stroke.points
-        .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x - minX} ${point.y - minY}`)
-        .join(" ");
-
-      return `<path d="${commands}" fill="none" stroke="${escapeXml(stroke.color)}" stroke-width="${stroke.baseWidth}" stroke-linecap="round" stroke-linejoin="round" />`;
+      return createSvgShapeMarkup(vectorItem, minX, minY);
     }).join("");
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-${paths}
+${items}
 </svg>`;
   }
 
@@ -652,7 +892,7 @@ ${paths}
       return;
     }
 
-    const svgMarkup = createSvgMarkup(exportState.strokes);
+    const svgMarkup = createSvgMarkup(exportState.vectors);
     const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
     const downloadUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -661,6 +901,10 @@ ${paths}
     anchor.download = selectedItem ? "canvas-selection.svg" : "canvas-document.svg";
     anchor.click();
     URL.revokeObjectURL(downloadUrl);
+  }
+
+  function orderedShapeIndices() {
+    return [...shapes.keys()].sort((firstIndex, secondIndex) => shapes[secondIndex].order - shapes[firstIndex].order);
   }
 
   function hitTestSelection(point: Point): SelectionTarget | null {
@@ -676,6 +920,17 @@ ${paths}
         return {
           kind: "image",
           index: imageIndex,
+        };
+      }
+    }
+
+    for (const shapeIndex of orderedShapeIndices()) {
+      const tolerance = Math.max(shapes[shapeIndex].baseWidth * 1.5, 8 / camera.scale);
+
+      if (shapeContainsPoint(shapes[shapeIndex], point, tolerance)) {
+        return {
+          kind: "shape",
+          index: shapeIndex,
         };
       }
     }
@@ -722,6 +977,20 @@ ${paths}
 
       image.x += deltaX;
       image.y += deltaY;
+      return;
+    }
+
+    if (selectedItem.kind === "shape") {
+      const shape = shapes[selectedItem.index];
+
+      if (!shape) {
+        return;
+      }
+
+      shape.start.x += deltaX;
+      shape.start.y += deltaY;
+      shape.end.x += deltaX;
+      shape.end.y += deltaY;
       return;
     }
 
@@ -849,6 +1118,53 @@ ${paths}
     return null;
   }
 
+  function createStroke(point: Point, pressure: number) {
+    const stroke: Stroke = {
+      id: crypto.randomUUID(),
+      color: strokeColor,
+      baseWidth: baseStrokeWidth,
+      order: nextVectorOrder,
+      points: [{
+        ...point,
+        pressure,
+      }],
+    };
+
+    nextVectorOrder += 1;
+    strokes.push(stroke);
+    return stroke;
+  }
+
+  function createShape(point: Point) {
+    const shape: Shape = {
+      id: crypto.randomUUID(),
+      kind: selectedShapeKind,
+      color: strokeColor,
+      baseWidth: baseStrokeWidth,
+      order: nextVectorOrder,
+      start: { ...point },
+      end: { ...point },
+    };
+
+    nextVectorOrder += 1;
+    shapes.push(shape);
+    return shape;
+  }
+
+  function removeLastVectorItem() {
+    const lastStroke = strokes[strokes.length - 1];
+    const lastShape = shapes[shapes.length - 1];
+
+    if (lastStroke && (!lastShape || lastStroke.order > lastShape.order)) {
+      strokes.pop();
+      return;
+    }
+
+    if (lastShape) {
+      shapes.pop();
+    }
+  }
+
   const onPaste = (event: ClipboardEvent) => {
     const clipboardData = event.clipboardData;
 
@@ -919,20 +1235,18 @@ ${paths}
       return;
     }
 
+    if (selectedTool === "shape") {
+      currentShape = createShape(point);
+      canvas.setPointerCapture(event.pointerId);
+      redraw();
+      return;
+    }
+
     if (selectedTool !== "pen") {
       return;
     }
 
-    currentStroke = {
-      points: [{
-        ...point,
-        pressure,
-      }],
-      color: strokeColor,
-      baseWidth: baseStrokeWidth,
-    };
-
-    strokes.push(currentStroke);
+    currentStroke = createStroke(point, pressure);
     redraw();
   };
 
@@ -970,6 +1284,12 @@ ${paths}
       return;
     }
 
+    if (selectedTool === "shape" && currentShape) {
+      currentShape.end = { ...point };
+      redraw();
+      return;
+    }
+
     if (selectedTool !== "pen" || !currentStroke) {
       return;
     }
@@ -983,6 +1303,7 @@ ${paths}
 
   const onPointerUp = (event: PointerEvent) => {
     currentStroke = null;
+    currentShape = null;
     moveAnchorPoint = null;
     isPanning = false;
     updateCursor();
@@ -994,6 +1315,7 @@ ${paths}
 
   const onPointerCancel = () => {
     currentStroke = null;
+    currentShape = null;
     moveAnchorPoint = null;
     isPanning = false;
     updateCursor();
@@ -1028,15 +1350,21 @@ ${paths}
 
     if (event.ctrlKey && event.key.toLowerCase() === "z") {
       event.preventDefault();
-      strokes.pop();
-      if (selectedItem?.kind === "stroke" && selectedItem.index >= strokes.length) {
+      removeLastVectorItem();
+
+      if (
+        (selectedItem?.kind === "stroke" && selectedItem.index >= strokes.length)
+        || (selectedItem?.kind === "shape" && selectedItem.index >= shapes.length)
+      ) {
         selectedItem = null;
       }
+
       redraw();
     }
 
     if (!event.ctrlKey && event.key.toLowerCase() === "c") {
       strokes.length = 0;
+      shapes.length = 0;
       selectedItem = null;
       redraw();
     }
@@ -1079,6 +1407,24 @@ ${paths}
     return "none";
   }
 
+  function toCanvasShapeDocument(shape: Shape): CanvasShapeDocument {
+    return {
+      id: shape.id,
+      kind: shape.kind,
+      color: shape.color,
+      width: shape.baseWidth,
+      order: shape.order,
+      start: {
+        x: shape.start.x,
+        y: shape.start.y,
+      },
+      end: {
+        x: shape.end.x,
+        y: shape.end.y,
+      },
+    };
+  }
+
   async function importImages(imagePlacements: CanvasImagePlacementDocument[]) {
     const loadedImages = await Promise.all(
       imagePlacements.map(async (placement) => {
@@ -1112,12 +1458,14 @@ ${paths}
         strokes: strokes.map((stroke) => ({
           color: stroke.color,
           width: stroke.baseWidth,
+          order: stroke.order,
           points: stroke.points.map((point) => ({
             x: point.x,
             y: point.y,
             pressure: point.pressure,
           })),
         })),
+        shapes: shapes.map(toCanvasShapeDocument),
         images: images.map((image) => ({
           id: image.id,
           assetPath: image.assetPath,
@@ -1142,10 +1490,14 @@ ${paths}
       selectedItem = null;
       moveAnchorPoint = null;
       strokes.length = 0;
+      shapes.length = 0;
+
       strokes.push(
-        ...snapshot.document.strokes.map((stroke) => ({
+        ...snapshot.document.strokes.map((stroke, index) => ({
+          id: crypto.randomUUID(),
           color: stroke.color,
           baseWidth: stroke.width,
+          order: stroke.order ?? index + 1,
           points: stroke.points.map((point) => ({
             x: point.x,
             y: point.y,
@@ -1153,6 +1505,31 @@ ${paths}
           })),
         })),
       );
+
+      shapes.push(
+        ...snapshot.document.shapes.map((shape, index) => ({
+          id: shape.id,
+          kind: shape.kind,
+          color: shape.color,
+          baseWidth: shape.width,
+          order: shape.order ?? snapshot.document.strokes.length + index + 1,
+          start: {
+            x: shape.start.x,
+            y: shape.start.y,
+          },
+          end: {
+            x: shape.end.x,
+            y: shape.end.y,
+          },
+        })),
+      );
+
+      nextVectorOrder = Math.max(
+        1,
+        ...strokes.map((stroke) => stroke.order + 1),
+        ...shapes.map((shape) => shape.order + 1),
+      );
+
       await importImages(snapshot.document.images);
       redraw();
     },
