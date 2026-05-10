@@ -2,12 +2,11 @@
 
 ## Current TODOs
 
-- [ ] 2 Storage add-autosave-and-recovery
+- [ ] 2 Export add-svg-export-eligibility
 
 ## Active TODOs
 
 - [ ] 2 Reading add-tts-and-reliability-pipeline
-- [ ] 2 Export add-svg-export-eligibility
 - [ ] 3 PDF add-pdf-page-import-and-recolor
 - [ ] 3 Canvas add-draw-shapes
 - [ ] 3 UX add-config-and-toolbar-icons
@@ -244,7 +243,7 @@ Notes:
 
 Priority: 2
 Area: Storage
-Status: pending
+Status: done
 Depends on: add-save-load-project-files
 
 Goal:

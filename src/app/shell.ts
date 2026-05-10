@@ -3,7 +3,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { mountCanvasWorkspace } from "../features/canvas/workspace";
 import { mountPdfWorkspace } from "../features/pdf/workspace";
 import { AppStateStore } from "./state";
-import type { AppBootstrap, AppMode, CanvasDocument, PdfStudyDocument, WorkspaceController } from "./types";
+import type {
+  AppBootstrap,
+  AppMode,
+  CanvasDocument,
+  PdfStudyDocument,
+  WorkspaceController,
+  WorkspaceDocumentSnapshot,
+} from "./types";
+
+type AutosaveRecord = {
+  savedAt: string;
+  snapshot: WorkspaceDocumentSnapshot;
+};
 
 export function mountAppShell(root: HTMLElement) {
   const state = new AppStateStore();
@@ -36,6 +48,11 @@ export function mountAppShell(root: HTMLElement) {
               <button id="project-save-button" class="project-action-button" type="button">Save</button>
               <button id="project-load-button" class="project-action-button secondary" type="button">Load</button>
             </div>
+            <div class="project-action-row recovery-row">
+              <button id="autosave-restore-button" class="project-action-button secondary" type="button" hidden>Restore autosave</button>
+              <button id="autosave-clear-button" class="project-action-button secondary" type="button" hidden>Clear recovery</button>
+            </div>
+            <div id="autosave-status" class="autosave-status">Autosave idle</div>
             <div id="backend-status" class="backend-status">Loading backend status...</div>
           </div>
         </header>
@@ -53,6 +70,9 @@ export function mountAppShell(root: HTMLElement) {
   const projectPathInput = requireElement<HTMLInputElement>(root, "#project-path-input");
   const saveButton = requireElement<HTMLButtonElement>(root, "#project-save-button");
   const loadButton = requireElement<HTMLButtonElement>(root, "#project-load-button");
+  const autosaveRestoreButton = requireElement<HTMLButtonElement>(root, "#autosave-restore-button");
+  const autosaveClearButton = requireElement<HTMLButtonElement>(root, "#autosave-clear-button");
+  const autosaveStatus = requireElement<HTMLElement>(root, "#autosave-status");
   const modeButtons = root.querySelectorAll<HTMLButtonElement>(".mode-button");
 
   let activeWorkspace: WorkspaceController | null = null;
@@ -80,6 +100,11 @@ export function mountAppShell(root: HTMLElement) {
     },
   };
 
+  const autosaveStorageKeys: Record<AppMode, string> = {
+    canvas: "rpdf.autosave.canvas",
+    pdf: "rpdf.autosave.pdf",
+  };
+
   function renderMode(mode: AppMode) {
     for (const button of modeButtons) {
       button.classList.toggle("active", button.dataset.mode === mode);
@@ -96,10 +121,82 @@ export function mountAppShell(root: HTMLElement) {
 
     if (mode === "canvas") {
       activeWorkspace = mountCanvasWorkspace(workspaceRoot);
+      renderAutosaveRecoveryState(mode);
       return;
     }
 
     activeWorkspace = mountPdfWorkspace(workspaceRoot, bootstrap);
+    renderAutosaveRecoveryState(mode);
+  }
+
+  function autosaveKey(mode: AppMode) {
+    return autosaveStorageKeys[mode];
+  }
+
+  function readAutosave(mode: AppMode): AutosaveRecord | null {
+    const rawValue = window.localStorage.getItem(autosaveKey(mode));
+
+    if (!rawValue) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(rawValue) as AutosaveRecord;
+    } catch (error) {
+      console.error("Could not parse autosave record:", error);
+      window.localStorage.removeItem(autosaveKey(mode));
+      return null;
+    }
+  }
+
+  function renderAutosaveRecoveryState(mode: AppMode) {
+    const record = readAutosave(mode);
+    const hasRecovery = Boolean(record);
+
+    autosaveRestoreButton.hidden = !hasRecovery;
+    autosaveClearButton.hidden = !hasRecovery;
+    autosaveStatus.textContent = hasRecovery
+      ? `Recovery available from ${record?.savedAt ?? "unknown time"}`
+      : "Autosave idle";
+  }
+
+  function writeAutosaveSnapshot() {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    const mode = state.snapshot.mode;
+    const record: AutosaveRecord = {
+      savedAt: new Date().toISOString(),
+      snapshot: activeWorkspace.exportDocument(),
+    };
+
+    window.localStorage.setItem(autosaveKey(mode), JSON.stringify(record));
+    renderAutosaveRecoveryState(mode);
+  }
+
+  function clearAutosave(mode: AppMode) {
+    window.localStorage.removeItem(autosaveKey(mode));
+    renderAutosaveRecoveryState(mode);
+  }
+
+  async function restoreAutosave() {
+    if (!activeWorkspace) {
+      backendStatus.textContent = "No active workspace to restore into";
+      return;
+    }
+
+    const mode = state.snapshot.mode;
+    const record = readAutosave(mode);
+
+    if (!record) {
+      autosaveStatus.textContent = "No recovery snapshot found";
+      return;
+    }
+
+    await activeWorkspace.importDocument(record.snapshot);
+    backendStatus.textContent = `Restored ${mode} autosave from ${record.savedAt}`;
+    renderAutosaveRecoveryState(mode);
   }
 
   async function saveCurrentDocument() {
@@ -134,6 +231,7 @@ export function mountAppShell(root: HTMLElement) {
     }
 
     backendStatus.textContent = `Saved ${snapshot.kind} document to ${filePath}`;
+    clearAutosave(state.snapshot.mode);
   }
 
   async function loadCurrentDocument() {
@@ -160,6 +258,7 @@ export function mountAppShell(root: HTMLElement) {
         document,
       });
       backendStatus.textContent = `Loaded canvas document from ${filePath}`;
+      renderAutosaveRecoveryState("canvas");
       return;
     }
 
@@ -173,6 +272,7 @@ export function mountAppShell(root: HTMLElement) {
       document,
     });
     backendStatus.textContent = `Loaded PDF session from ${filePath}`;
+    renderAutosaveRecoveryState("pdf");
   }
 
   function renderBackendStatus(currentBootstrap: AppBootstrap | null) {
@@ -211,9 +311,30 @@ export function mountAppShell(root: HTMLElement) {
     });
   });
 
+  autosaveRestoreButton.addEventListener("click", () => {
+    restoreAutosave().catch((error) => {
+      backendStatus.textContent = `Recovery failed: ${String(error)}`;
+    });
+  });
+
+  autosaveClearButton.addEventListener("click", () => {
+    clearAutosave(state.snapshot.mode);
+    backendStatus.textContent = `Cleared ${state.snapshot.mode} recovery snapshot`;
+  });
+
   state.subscribe(({ mode }) => {
     renderMode(mode);
   });
+
+  window.setInterval(() => {
+    try {
+      writeAutosaveSnapshot();
+    } catch (error) {
+      autosaveStatus.textContent = `Autosave failed: ${String(error)}`;
+    }
+  }, 5000);
+
+  window.addEventListener("beforeunload", writeAutosaveSnapshot);
 
   invoke<AppBootstrap>("get_app_bootstrap")
     .then((result) => {
