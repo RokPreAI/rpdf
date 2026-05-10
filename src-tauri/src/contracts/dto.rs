@@ -119,6 +119,7 @@ pub struct TextSpanDto {
 #[serde(rename_all = "camelCase")]
 pub struct PageTextExtractionDto {
     pub page_index: u32,
+    pub source_kind: String,
     pub reliability: ReadingReliabilityStateDto,
     pub warning: Option<String>,
     pub spans: Vec<TextSpanDto>,

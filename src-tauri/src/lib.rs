@@ -4,6 +4,7 @@ mod domain;
 mod infrastructure;
 
 use app::commands::{
+    extract_pdf_page_ocr,
     extract_pdf_page_text,
     get_app_bootstrap,
     load_canvas_project,
@@ -30,7 +31,8 @@ pub fn run() {
             save_pdf_study_session,
             load_pdf_study_session,
             render_pdf_page,
-            extract_pdf_page_text
+            extract_pdf_page_text,
+            extract_pdf_page_ocr
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

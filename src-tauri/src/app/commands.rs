@@ -83,3 +83,11 @@ pub fn extract_pdf_page_text(
 ) -> Result<PageTextExtractionDto, String> {
     services.extract_pdf_page_text(&request)
 }
+
+#[tauri::command]
+pub fn extract_pdf_page_ocr(
+    request: ExtractPdfTextRequestDto,
+    services: State<'_, AppServices>,
+) -> Result<PageTextExtractionDto, String> {
+    services.extract_pdf_page_ocr(&request)
+}

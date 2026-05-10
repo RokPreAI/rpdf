@@ -6,9 +6,9 @@ import type {
   OpenPdfDocumentRequest,
   OpenPdfDocumentResponse,
   PageTextExtraction,
+  PdfBackendStatus,
   PdfPageAnnotationLayerDocument,
   PdfStudyDocument,
-  PdfBackendStatus,
   ReadingReliabilityState,
   RenderPdfPageRequest,
   RenderPdfPageResponse,
@@ -30,10 +30,14 @@ type AnnotationStroke = {
 type PdfWorkspaceState = {
   document: OpenPdfDocumentResponse | null;
   pageIndex: number;
-  extraction: PageTextExtraction | null;
+  nativeExtraction: PageTextExtraction | null;
+  ocrExtraction: PageTextExtraction | null;
   backendStatus: PdfBackendStatus | null;
   pageRender: RenderPdfPageResponse | null;
   pageError: string | null;
+  readingStatus: string;
+  isOcrRunning: boolean;
+  isSpeaking: boolean;
 };
 
 export function mountPdfWorkspace(
@@ -64,7 +68,7 @@ export function mountPdfWorkspace(
           </div>
           <div id="pdf-page-label" class="pdf-page-label">No document open</div>
           <p class="pdf-helper-copy">
-            The first pass keeps navigation state and backend calls explicit even before Pdfium rendering is configured.
+            Native text is attempted first. OCR stays manual and explicit when native extraction is weak.
           </p>
         </div>
 
@@ -74,7 +78,23 @@ export function mountPdfWorkspace(
           <p id="pdf-reliability-copy" class="pdf-helper-copy">
             Open a document to inspect native text extraction status for the current page.
           </p>
+          <div id="pdf-reading-source" class="pdf-helper-copy"></div>
           <ul id="pdf-backend-notes" class="pdf-note-list"></ul>
+        </div>
+
+        <div class="pdf-card pdf-sidebar-card">
+          <div class="pdf-kicker">Reading controls</div>
+          <div class="pdf-action-row">
+            <button id="pdf-read-button" class="pdf-button" type="button">Read page</button>
+            <button id="pdf-stop-button" class="pdf-button ghost" type="button">Stop</button>
+            <button id="pdf-ocr-button" class="pdf-button ghost" type="button">Run OCR fallback</button>
+          </div>
+          <p id="pdf-reading-status" class="pdf-helper-copy">
+            Reading is local and page-scoped. Weak extraction does not imply reliable follow-along.
+          </p>
+          <div id="pdf-text-preview" class="pdf-text-preview">
+            Open a document to inspect extracted reading text for the current page.
+          </div>
         </div>
       </aside>
 
@@ -116,10 +136,14 @@ export function mountPdfWorkspace(
   const state: PdfWorkspaceState = {
     document: null,
     pageIndex: 0,
-    extraction: null,
+    nativeExtraction: null,
+    ocrExtraction: null,
     backendStatus: bootstrap?.activePdfBackend ?? null,
     pageRender: null,
     pageError: null,
+    readingStatus: "Reading is local and page-scoped. Weak extraction does not imply reliable follow-along.",
+    isOcrRunning: false,
+    isSpeaking: false,
   };
 
   const pathInput = requireElement<HTMLInputElement>(container, "#pdf-path-input");
@@ -127,11 +151,17 @@ export function mountPdfWorkspace(
   const refreshButton = requireElement<HTMLButtonElement>(container, "#pdf-refresh-button");
   const prevButton = requireElement<HTMLButtonElement>(container, "#pdf-prev-button");
   const nextButton = requireElement<HTMLButtonElement>(container, "#pdf-next-button");
+  const readButton = requireElement<HTMLButtonElement>(container, "#pdf-read-button");
+  const stopButton = requireElement<HTMLButtonElement>(container, "#pdf-stop-button");
+  const ocrButton = requireElement<HTMLButtonElement>(container, "#pdf-ocr-button");
   const pageLabel = requireElement<HTMLElement>(container, "#pdf-page-label");
   const openError = requireElement<HTMLElement>(container, "#pdf-open-error");
   const reliabilityBadge = requireElement<HTMLElement>(container, "#pdf-reliability-badge");
   const reliabilityCopy = requireElement<HTMLElement>(container, "#pdf-reliability-copy");
+  const readingSource = requireElement<HTMLElement>(container, "#pdf-reading-source");
   const backendNotesList = requireElement<HTMLElement>(container, "#pdf-backend-notes");
+  const readingStatus = requireElement<HTMLElement>(container, "#pdf-reading-status");
+  const textPreview = requireElement<HTMLElement>(container, "#pdf-text-preview");
   const documentTitle = requireElement<HTMLElement>(container, "#pdf-document-title");
   const backendName = requireElement<HTMLElement>(container, "#pdf-backend-name");
   const pageCountCopy = requireElement<HTMLElement>(container, "#pdf-page-count-copy");
@@ -170,8 +200,36 @@ export function mountPdfWorkspace(
     openError.textContent = message ?? "";
   }
 
+  function escapeText(value: string) {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
   function renderBackendNotes(notes: string[]) {
-    backendNotesList.innerHTML = notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("");
+    backendNotesList.innerHTML = notes.map((note) => `<li>${escapeText(note)}</li>`).join("");
+  }
+
+  function activeExtraction() {
+    return state.ocrExtraction ?? state.nativeExtraction;
+  }
+
+  function currentReadableText() {
+    const extraction = activeExtraction();
+
+    if (!extraction) {
+      return "";
+    }
+
+    return extraction.spans
+      .map((span) => span.text.trim())
+      .filter((text) => text.length > 0)
+      .join("\n");
+  }
+
+  function canUseOcrFallback(reliability: ReadingReliabilityState) {
+    return reliability === "native_weak" || reliability === "unavailable";
   }
 
   function renderReliability(reliability: ReadingReliabilityState, warning: string | null) {
@@ -179,6 +237,30 @@ export function mountPdfWorkspace(
     reliabilityBadge.textContent = reliability.replace(/_/g, " ");
     reliabilityCopy.textContent = warning
       ?? "Native text extraction has not produced a warning for this page.";
+  }
+
+  function renderReadingPanel() {
+    const extraction = activeExtraction();
+    const text = currentReadableText();
+
+    readButton.disabled = !state.document || text.length === 0;
+    stopButton.disabled = !state.isSpeaking;
+    ocrButton.disabled = !state.document || state.isOcrRunning || !canUseOcrFallback(state.nativeExtraction?.reliability ?? "unavailable");
+    ocrButton.textContent = state.isOcrRunning ? "Running OCR..." : "Run OCR fallback";
+    readingStatus.textContent = state.readingStatus;
+
+    if (!extraction) {
+      readingSource.textContent = "Source: no extracted text available yet";
+      textPreview.textContent = "Open a document to inspect extracted reading text for the current page.";
+      return;
+    }
+
+    readingSource.textContent = extraction.sourceKind === "ocr"
+      ? "Source: OCR fallback text"
+      : "Source: native PDF text";
+    textPreview.textContent = text.length > 0
+      ? text.slice(0, 2400)
+      : "No readable text was extracted for this page.";
   }
 
   function resizeAnnotationLayer() {
@@ -240,15 +322,69 @@ export function mountPdfWorkspace(
     };
   }
 
+  function stopSpeaking() {
+    if (!("speechSynthesis" in window)) {
+      state.isSpeaking = false;
+      state.readingStatus = "Speech synthesis is unavailable in this runtime.";
+      renderReadingPanel();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    state.isSpeaking = false;
+    state.readingStatus = "Reading stopped.";
+    renderReadingPanel();
+  }
+
+  function speakCurrentPage() {
+    const text = currentReadableText();
+    const extraction = activeExtraction();
+
+    if (!text || !extraction) {
+      state.readingStatus = "There is no extracted text available to read aloud for this page.";
+      renderReadingPanel();
+      return;
+    }
+
+    if (!("speechSynthesis" in window)) {
+      state.readingStatus = "Speech synthesis is unavailable in this runtime.";
+      renderReadingPanel();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1;
+    utterance.onstart = () => {
+      state.isSpeaking = true;
+      state.readingStatus = extraction.reliability === "native_reliable" || extraction.reliability === "ocr_reliable"
+        ? `Reading ${extraction.sourceKind} text aloud.`
+        : `Reading ${extraction.sourceKind} text aloud with weak reliability.`;
+      renderReadingPanel();
+    };
+    utterance.onend = () => {
+      state.isSpeaking = false;
+      state.readingStatus = "Reading finished.";
+      renderReadingPanel();
+    };
+    utterance.onerror = () => {
+      state.isSpeaking = false;
+      state.readingStatus = "Speech synthesis failed for the current page.";
+      renderReadingPanel();
+    };
+    window.speechSynthesis.speak(utterance);
+  }
+
   function renderDocumentState() {
     const document = state.document;
     const hasDocument = Boolean(document);
+    const extraction = activeExtraction();
 
     stageShell.classList.toggle("empty", !hasDocument);
     stageEmpty.hidden = hasDocument;
     stage.hidden = !hasDocument;
     prevButton.disabled = !hasDocument || state.pageIndex <= 0;
-    nextButton.disabled = !hasDocument;
+    nextButton.disabled = !hasDocument || (document?.pageCount !== null && document !== null && state.pageIndex >= document.pageCount - 1);
     refreshButton.disabled = !hasDocument;
 
     if (!document) {
@@ -262,6 +398,7 @@ export function mountPdfWorkspace(
       renderPlaceholder.textContent = "The PDF page stage is ready, but no document is open yet.";
       resizeAnnotationLayer();
       redrawAnnotations();
+      renderReadingPanel();
       return;
     }
 
@@ -271,9 +408,10 @@ export function mountPdfWorkspace(
       : `${document.pageCount} pages detected`;
     pageLabel.textContent = `Page ${state.pageIndex + 1}${document.pageCount ? ` of ${document.pageCount}` : ""}`;
 
-    const reliability = state.extraction?.reliability ?? "unavailable";
-    const warning = state.pageError ?? state.extraction?.warning ?? null;
-    renderReliability(reliability, warning);
+    renderReliability(
+      extraction?.reliability ?? "unavailable",
+      state.pageError ?? extraction?.warning ?? null,
+    );
 
     const notes = document.notes.length > 0
       ? document.notes
@@ -293,6 +431,31 @@ export function mountPdfWorkspace(
     }
 
     resizeAnnotationLayer();
+    renderReadingPanel();
+  }
+
+  async function extractNativeText(documentPath: string, pageIndex: number) {
+    try {
+      state.nativeExtraction = await invoke<PageTextExtraction>("extract_pdf_page_text", {
+        request: {
+          documentPath,
+          pageIndex,
+        } satisfies ExtractPdfTextRequest,
+      });
+
+      state.readingStatus = state.nativeExtraction.reliability === "native_reliable"
+        ? "Native PDF text is ready for local reading."
+        : "Native PDF text is weak or unavailable. OCR fallback is available if needed.";
+    } catch (error) {
+      state.nativeExtraction = {
+        pageIndex,
+        sourceKind: "native",
+        reliability: "unavailable",
+        warning: String(error),
+        spans: [],
+      };
+      state.readingStatus = "Native text extraction failed for this page.";
+    }
   }
 
   async function refreshPageState() {
@@ -302,9 +465,11 @@ export function mountPdfWorkspace(
       return;
     }
 
+    stopSpeaking();
     state.pageRender = null;
     state.pageError = null;
-    state.extraction = null;
+    state.nativeExtraction = null;
+    state.ocrExtraction = null;
     renderDocumentState();
 
     try {
@@ -328,23 +493,46 @@ export function mountPdfWorkspace(
       state.pageError = String(error);
     }
 
+    await extractNativeText(document.documentPath, state.pageIndex);
+    renderDocumentState();
+  }
+
+  async function runOcrFallback() {
+    const document = state.document;
+    const nativeExtraction = state.nativeExtraction;
+
+    if (!document || !nativeExtraction || !canUseOcrFallback(nativeExtraction.reliability)) {
+      return;
+    }
+
+    state.isOcrRunning = true;
+    state.readingStatus = "Running local OCR fallback for the current page.";
+    renderReadingPanel();
+
     try {
-      state.extraction = await invoke<PageTextExtraction>("extract_pdf_page_text", {
+      state.ocrExtraction = await invoke<PageTextExtraction>("extract_pdf_page_ocr", {
         request: {
           documentPath: document.documentPath,
           pageIndex: state.pageIndex,
         } satisfies ExtractPdfTextRequest,
       });
+
+      state.readingStatus = state.ocrExtraction.reliability === "ocr_reliable"
+        ? "OCR fallback recovered readable text for this page."
+        : "OCR fallback completed, but the result is still weak. Treat follow-along as untrusted.";
     } catch (error) {
-      state.extraction = {
+      state.ocrExtraction = {
         pageIndex: state.pageIndex,
+        sourceKind: "ocr",
         reliability: "unavailable",
         warning: String(error),
         spans: [],
       };
+      state.readingStatus = "OCR fallback failed for the current page.";
+    } finally {
+      state.isOcrRunning = false;
+      renderDocumentState();
     }
-
-    renderDocumentState();
   }
 
   async function openDocument() {
@@ -355,6 +543,7 @@ export function mountPdfWorkspace(
       return;
     }
 
+    stopSpeaking();
     setOpenError(null);
 
     try {
@@ -373,7 +562,8 @@ export function mountPdfWorkspace(
       state.pageIndex = 0;
       state.pageRender = null;
       state.pageError = null;
-      state.extraction = null;
+      state.nativeExtraction = null;
+      state.ocrExtraction = null;
       setOpenError(String(error));
       renderDocumentState();
     }
@@ -437,6 +627,15 @@ export function mountPdfWorkspace(
   nextButton.addEventListener("click", () => {
     movePage(1);
   });
+  readButton.addEventListener("click", () => {
+    speakCurrentPage();
+  });
+  stopButton.addEventListener("click", () => {
+    stopSpeaking();
+  });
+  ocrButton.addEventListener("click", () => {
+    void runOcrFallback();
+  });
   pathInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -470,12 +669,14 @@ export function mountPdfWorkspace(
         }))
         .sort((firstLayer, secondLayer) => firstLayer.pageIndex - secondLayer.pageIndex);
 
-      const readingCache = state.extraction ? [{
-        pageIndex: state.extraction.pageIndex,
-        reliability: state.extraction.reliability,
-        sourceKind: (state.extraction.reliability.startsWith("ocr") ? "ocr" : "native") as "ocr" | "native",
-        cacheKey: null,
-      }] : [];
+      const readingCache = [state.nativeExtraction, state.ocrExtraction]
+        .filter((entry): entry is PageTextExtraction => entry !== null)
+        .map((entry) => ({
+          pageIndex: entry.pageIndex,
+          reliability: entry.reliability,
+          sourceKind: entry.sourceKind,
+          cacheKey: null,
+        }));
 
       const document: PdfStudyDocument = {
         version: {
@@ -505,6 +706,7 @@ export function mountPdfWorkspace(
         throw new Error("PDF workspace cannot load a non-PDF study session.");
       }
 
+      stopSpeaking();
       documentId = snapshot.document.id;
       annotationsByPage.clear();
       for (const layer of snapshot.document.annotations) {
@@ -531,12 +733,14 @@ export function mountPdfWorkspace(
       state.pageIndex = snapshot.document.currentPageIndex;
       state.pageRender = null;
       state.pageError = null;
-      state.extraction = null;
+      state.nativeExtraction = null;
+      state.ocrExtraction = null;
       pathInput.value = snapshot.document.sourcePdfPath;
       await refreshPageState();
       redrawAnnotations();
     },
     destroy() {
+      stopSpeaking();
       window.removeEventListener("resize", resizeAnnotationLayer);
       annotationLayer.removeEventListener("pointerdown", onPointerDown);
       annotationLayer.removeEventListener("pointermove", onPointerMove);
@@ -545,13 +749,6 @@ export function mountPdfWorkspace(
       container.replaceChildren();
     },
   };
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function fileNameFromPath(value: string) {

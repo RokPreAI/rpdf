@@ -2,11 +2,10 @@
 
 ## Current TODOs
 
-- [ ] 2 Reading add-tts-and-reliability-pipeline
+- [ ] 3 PDF add-pdf-page-import-and-recolor
 
 ## Active TODOs
 
-- [ ] 3 PDF add-pdf-page-import-and-recolor
 - [ ] 3 UX add-config-and-toolbar-icons
 
 ## Done TODOs
@@ -15,6 +14,7 @@
 - [x] 0 Storage versioned-project-and-session-model
 - [x] 1 App split-main-into-shell-and-modes
 - [x] 1 Canvas add-tablet-pressure-and-stroke-width
+- [x] 2 Reading add-tts-and-reliability-pipeline
 - [x] 3 Canvas add-draw-shapes
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
@@ -213,7 +213,7 @@ Notes:
 
 Priority: 2
 Area: Reading
-Status: pending
+Status: done
 Depends on: build-pdf-mode-shell, architecture-foundation-and-pdfium-gate
 
 Goal:

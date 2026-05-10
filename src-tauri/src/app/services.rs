@@ -80,11 +80,12 @@ impl AppServices {
             .and_then(|value| value.to_str())
             .unwrap_or(normalized_path)
             .to_string();
+        let page_count = pdf_page_count(normalized_path).ok();
 
         Ok(OpenPdfDocumentResponseDto {
             document_path: normalized_path.to_string(),
             document_name,
-            page_count: None,
+            page_count,
             backend_ready: backend_status.configured,
             notes: backend_status.notes,
         })
@@ -131,6 +132,40 @@ impl AppServices {
     ) -> Result<PageTextExtractionDto, String> {
         self.pdf_engine.extract_page_text(request)
     }
+
+    pub fn extract_pdf_page_ocr(
+        &self,
+        request: &ExtractPdfTextRequestDto,
+    ) -> Result<PageTextExtractionDto, String> {
+        self.pdf_engine.extract_page_text_with_ocr(request)
+    }
+}
+
+fn pdf_page_count(document_path: &str) -> Result<u32, String> {
+    let output = std::process::Command::new("pdfinfo")
+        .arg(document_path)
+        .output()
+        .map_err(|error| format!("Could not run pdfinfo: {error}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("pdfinfo failed: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+
+        if let Some(value) = trimmed.strip_prefix("Pages:") {
+            return value
+                .trim()
+                .parse::<u32>()
+                .map_err(|error| format!("Could not parse page count from pdfinfo: {error}"));
+        }
+    }
+
+    Err("pdfinfo did not report a page count.".to_string())
 }
 
 fn write_json_document<T>(file_path: &str, document: &T) -> Result<(), String>

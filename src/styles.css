@@ -483,6 +483,20 @@ button {
   color: var(--fg);
 }
 
+.pdf-text-preview {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 12px;
+  border: 1px solid rgba(192, 202, 245, 0.08);
+  border-radius: var(--medium-radius);
+  background: rgba(12, 14, 20, 0.5);
+  padding: 12px;
+  color: var(--fg-dark);
+  white-space: pre-wrap;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
 .pdf-viewer-panel {
   min-width: 0;
 }

@@ -118,6 +118,7 @@ export type TextSpan = {
 
 export type PageTextExtraction = {
   pageIndex: number;
+  sourceKind: "native" | "ocr";
   reliability: ReadingReliabilityState;
   warning: string | null;
   spans: TextSpan[];
