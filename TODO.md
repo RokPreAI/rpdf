@@ -2,13 +2,12 @@
 
 ## Current TODOs
 
-- [ ] 2 Export add-svg-export-eligibility
+- [ ] 3 Canvas add-draw-shapes
 
 ## Active TODOs
 
 - [ ] 2 Reading add-tts-and-reliability-pipeline
 - [ ] 3 PDF add-pdf-page-import-and-recolor
-- [ ] 3 Canvas add-draw-shapes
 - [ ] 3 UX add-config-and-toolbar-icons
 
 ## Done TODOs
@@ -269,7 +268,7 @@ Notes:
 
 Priority: 2
 Area: Export
-Status: pending
+Status: done
 Depends on: add-selection-and-move-tools
 
 Goal:

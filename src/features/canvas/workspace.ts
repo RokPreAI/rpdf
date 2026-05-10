@@ -67,6 +67,11 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
           <input id="stroke-width" type="range" min="1" max="24" step="1" value="3" />
           <output id="stroke-width-value">3px</output>
         </label>
+
+        <div class="canvas-export-panel">
+          <button id="svg-export-button" type="button">Export SVG</button>
+          <div id="svg-export-status" class="svg-export-status"></div>
+        </div>
       </div>
 
       <div class="canvas-pickers">
@@ -211,6 +216,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
     const strokeWidthInput = requireElement<HTMLInputElement>(container, "#stroke-width");
     const strokeWidthValue = requireElement<HTMLOutputElement>(container, "#stroke-width-value");
+    const svgExportButton = requireElement<HTMLButtonElement>(container, "#svg-export-button");
 
     for (const button of colorButtons) {
       button.addEventListener("pointerdown", (event) => {
@@ -270,6 +276,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     strokeWidthInput.addEventListener("input", () => {
       baseStrokeWidth = Number(strokeWidthInput.value);
       strokeWidthValue.textContent = `${baseStrokeWidth}px`;
+    });
+
+    svgExportButton.addEventListener("click", () => {
+      exportSvg();
     });
   }
 
@@ -460,6 +470,61 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.restore();
   }
 
+  function currentSvgExportState() {
+    if (selectedItem?.kind === "image") {
+      return {
+        eligible: false,
+        message: "SVG export is disabled for raster image selections.",
+        strokes: [] as Stroke[],
+      };
+    }
+
+    if (selectedItem?.kind === "stroke") {
+      const stroke = strokes[selectedItem.index];
+
+      return stroke ? {
+        eligible: true,
+        message: "SVG export will include the selected stroke only.",
+        strokes: [stroke],
+      } : {
+        eligible: false,
+        message: "Selected stroke is no longer available.",
+        strokes: [] as Stroke[],
+      };
+    }
+
+    if (images.length > 0) {
+      return {
+        eligible: false,
+        message: "SVG export is disabled while the canvas contains raster images. Select a stroke or remove images.",
+        strokes: [] as Stroke[],
+      };
+    }
+
+    if (strokes.length === 0) {
+      return {
+        eligible: false,
+        message: "Draw at least one stroke before exporting SVG.",
+        strokes: [] as Stroke[],
+      };
+    }
+
+    return {
+      eligible: true,
+      message: "SVG export will include the full vector canvas.",
+      strokes,
+    };
+  }
+
+  function updateSvgExportState() {
+    const svgExportButton = requireElement<HTMLButtonElement>(container, "#svg-export-button");
+    const svgExportStatus = requireElement<HTMLElement>(container, "#svg-export-status");
+    const exportState = currentSvgExportState();
+
+    svgExportButton.disabled = !exportState.eligible;
+    svgExportStatus.textContent = exportState.message;
+  }
+
   function redraw() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -474,6 +539,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
 
     drawSelectionOverlay();
+    updateSvgExportState();
   }
 
   function eraseAtPoint(point: Point) {
@@ -517,6 +583,84 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       width: Math.max(1, maxX - minX + padding * 2),
       height: Math.max(1, maxY - minY + padding * 2),
     };
+  }
+
+  function strokeExportBounds(stroke: Stroke) {
+    const bounds = getStrokeBounds(stroke);
+
+    if (!bounds) {
+      return null;
+    }
+
+    return {
+      minX: bounds.x,
+      minY: bounds.y,
+      maxX: bounds.x + bounds.width,
+      maxY: bounds.y + bounds.height,
+    };
+  }
+
+  function createSvgMarkup(exportStrokes: Stroke[]) {
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+
+    for (const stroke of exportStrokes) {
+      const bounds = strokeExportBounds(stroke);
+
+      if (!bounds) {
+        continue;
+      }
+
+      minX = Math.min(minX, bounds.minX);
+      minY = Math.min(minY, bounds.minY);
+      maxX = Math.max(maxX, bounds.maxX);
+      maxY = Math.max(maxY, bounds.maxY);
+    }
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      throw new Error("No exportable vector strokes were available.");
+    }
+
+    const width = Math.max(1, maxX - minX);
+    const height = Math.max(1, maxY - minY);
+
+    const paths = exportStrokes.map((stroke) => {
+      if (stroke.points.length === 0) {
+        return "";
+      }
+
+      const commands = stroke.points
+        .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x - minX} ${point.y - minY}`)
+        .join(" ");
+
+      return `<path d="${commands}" fill="none" stroke="${escapeXml(stroke.color)}" stroke-width="${stroke.baseWidth}" stroke-linecap="round" stroke-linejoin="round" />`;
+    }).join("");
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+${paths}
+</svg>`;
+  }
+
+  function exportSvg() {
+    const exportState = currentSvgExportState();
+
+    if (!exportState.eligible) {
+      updateSvgExportState();
+      return;
+    }
+
+    const svgMarkup = createSvgMarkup(exportState.strokes);
+    const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+    const downloadUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = downloadUrl;
+    anchor.download = selectedItem ? "canvas-selection.svg" : "canvas-document.svg";
+    anchor.click();
+    URL.revokeObjectURL(downloadUrl);
   }
 
   function hitTestSelection(point: Point): SelectionTarget | null {
@@ -1038,6 +1182,14 @@ function getPointerPressure(event: PointerEvent) {
   }
 
   return Math.max(0.2, Math.min(event.pressure, 1));
+}
+
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function requireElement<T extends HTMLElement>(root: ParentNode, selector: string) {

@@ -224,6 +224,8 @@ button {
   position: absolute;
   left: 12px;
   top: 12px;
+  display: grid;
+  gap: 10px;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--bg-panel);
@@ -242,6 +244,32 @@ button {
 
 .stroke-width-control output {
   color: var(--fg-dark);
+}
+
+.canvas-export-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.canvas-export-panel button {
+  border: 1px solid rgba(122, 162, 247, 0.5);
+  border-radius: var(--medium-radius);
+  background: rgba(122, 162, 247, 0.16);
+  color: var(--fg);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.canvas-export-panel button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.svg-export-status {
+  max-width: 220px;
+  color: var(--fg-dark);
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 
 .canvas-pickers {
