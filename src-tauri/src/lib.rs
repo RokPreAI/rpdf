@@ -6,6 +6,7 @@ mod infrastructure;
 use app::commands::{
     extract_pdf_page_text,
     get_app_bootstrap,
+    open_pdf_document,
     get_pdf_backend_status,
     render_pdf_page,
 };
@@ -19,6 +20,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_bootstrap,
             get_pdf_backend_status,
+            open_pdf_document,
             render_pdf_page,
             extract_pdf_page_text
         ])

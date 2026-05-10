@@ -20,6 +20,53 @@ export type AppBootstrap = {
   reliabilityStates: ReadingReliabilityState[];
 };
 
+export type OpenPdfDocumentRequest = {
+  documentPath: string;
+};
+
+export type OpenPdfDocumentResponse = {
+  documentPath: string;
+  documentName: string;
+  pageCount: number | null;
+  backendReady: boolean;
+  notes: string[];
+};
+
+export type RenderPdfPageRequest = {
+  documentPath: string;
+  pageIndex: number;
+  targetWidth?: number | null;
+  targetHeight?: number | null;
+};
+
+export type RenderPdfPageResponse = {
+  pageIndex: number;
+  mimeType: string;
+  dataBase64: string;
+  width: number;
+  height: number;
+};
+
+export type ExtractPdfTextRequest = {
+  documentPath: string;
+  pageIndex: number;
+};
+
+export type TextSpan = {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type PageTextExtraction = {
+  pageIndex: number;
+  reliability: ReadingReliabilityState;
+  warning: string | null;
+  spans: TextSpan[];
+};
+
 export type WorkspaceController = {
   destroy(): void;
 };

@@ -2,11 +2,10 @@
 
 ## Current TODOs
 
-- [ ] 1 PDF build-pdf-mode-shell
+- [ ] 1 Storage add-save-load-project-files
 
 ## Active TODOs
 
-- [ ] 1 Storage add-save-load-project-files
 - [ ] 2 Canvas add-selection-and-move-tools
 - [ ] 2 Reading add-tts-and-reliability-pipeline
 - [ ] 2 Storage add-autosave-and-recovery
@@ -113,7 +112,7 @@ Notes:
 
 Priority: 1
 Area: PDF
-Status: current
+Status: done
 Depends on: split-main-into-shell-and-modes, architecture-foundation-and-pdfium-gate
 
 Goal:

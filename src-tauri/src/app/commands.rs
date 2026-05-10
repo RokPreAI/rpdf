@@ -4,6 +4,8 @@ use crate::app::services::AppServices;
 use crate::contracts::dto::{
     AppBootstrapDto,
     ExtractPdfTextRequestDto,
+    OpenPdfDocumentRequestDto,
+    OpenPdfDocumentResponseDto,
     PageTextExtractionDto,
     PdfBackendStatusDto,
     RenderPdfPageRequestDto,
@@ -18,6 +20,14 @@ pub fn get_app_bootstrap(services: State<'_, AppServices>) -> AppBootstrapDto {
 #[tauri::command]
 pub fn get_pdf_backend_status(services: State<'_, AppServices>) -> PdfBackendStatusDto {
     services.pdf_backend_status()
+}
+
+#[tauri::command]
+pub fn open_pdf_document(
+    request: OpenPdfDocumentRequestDto,
+    services: State<'_, AppServices>,
+) -> Result<OpenPdfDocumentResponseDto, String> {
+    services.open_pdf_document(&request)
 }
 
 #[tauri::command]

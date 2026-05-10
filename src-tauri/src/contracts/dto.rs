@@ -36,6 +36,22 @@ pub struct AppBootstrapDto {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OpenPdfDocumentRequestDto {
+    pub document_path: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenPdfDocumentResponseDto {
+    pub document_path: String,
+    pub document_name: String,
+    pub page_count: Option<u32>,
+    pub backend_ready: bool,
+    pub notes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RenderPdfPageRequestDto {
     pub document_path: String,
     pub page_index: u32,
