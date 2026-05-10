@@ -71,6 +71,7 @@ type SelectionTarget =
 
 type Tool = "pen" | "shape" | "select" | "pan" | "eraser";
 type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
+const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
   container.innerHTML = `
@@ -107,11 +108,11 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       </div>
 
       <div class="canvas-pickers">
-        <button class="tool-picker active" data-tool="pen" type="button">P</button>
-        <button class="tool-picker" data-tool="shape" type="button">H</button>
-        <button class="tool-picker" data-tool="select" type="button">S</button>
-        <button class="tool-picker" data-tool="pan" type="button">M</button>
-        <button class="tool-picker" data-tool="eraser" type="button">E</button>
+        <button class="tool-picker active" data-tool="pen" type="button" title="Pen" aria-label="Pen">✎</button>
+        <button class="tool-picker" data-tool="shape" type="button" title="Shape" aria-label="Shape">▭</button>
+        <button class="tool-picker" data-tool="select" type="button" title="Select" aria-label="Select">⌖</button>
+        <button class="tool-picker" data-tool="pan" type="button" title="Pan" aria-label="Pan">✥</button>
+        <button class="tool-picker" data-tool="eraser" type="button" title="Eraser" aria-label="Eraser">⌫</button>
 
         <button id="color-picker-fg" class="color-picker active" type="button"></button>
         <button id="color-picker-blue" class="color-picker" type="button"></button>
@@ -149,9 +150,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     scale: 1,
   };
 
+  const preferences = readPreferences();
   let selectedTool: Tool = "pen";
-  let selectedShapeKind: ShapeKind = "rectangle";
-  let strokeColor = readCssVariable("--fg") || "#c0caf5";
+  let selectedShapeKind: ShapeKind = preferences.defaultShapeKind;
+  let strokeColor = preferences.defaultCanvasColor;
   let currentStroke: Stroke | null = null;
   let currentShape: Shape | null = null;
   let selectedItem: SelectionTarget | null = null;
@@ -159,7 +161,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let isPanning = false;
   let isSpaceDown = false;
   let devicePixelRatioValue = window.devicePixelRatio || 1;
-  let baseStrokeWidth = 3;
+  let baseStrokeWidth = preferences.defaultStrokeWidth;
 
   const colorVariableByButtonId: Record<string, string> = {
     "color-picker-fg": "--fg",
@@ -177,6 +179,40 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     return getComputedStyle(document.documentElement)
       .getPropertyValue(name)
       .trim();
+  }
+
+  function readPreferences() {
+    const fallbackColor = readCssVariable("--fg") || "#c0caf5";
+    const rawValue = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
+
+    if (!rawValue) {
+      return {
+        defaultStrokeWidth: 3,
+        defaultShapeKind: "rectangle" as ShapeKind,
+        defaultCanvasColor: fallbackColor,
+      };
+    }
+
+    try {
+      const parsed = JSON.parse(rawValue) as Partial<{
+        defaultStrokeWidth: number;
+        defaultShapeKind: ShapeKind;
+        defaultCanvasColor: string;
+      }>;
+
+      return {
+        defaultStrokeWidth: typeof parsed.defaultStrokeWidth === "number" ? parsed.defaultStrokeWidth : 3,
+        defaultShapeKind: parsed.defaultShapeKind ?? "rectangle",
+        defaultCanvasColor: parsed.defaultCanvasColor ?? fallbackColor,
+      };
+    } catch (error) {
+      console.error("Could not parse canvas preferences:", error);
+      return {
+        defaultStrokeWidth: 3,
+        defaultShapeKind: "rectangle" as ShapeKind,
+        defaultCanvasColor: fallbackColor,
+      };
+    }
   }
 
   function getCanvasSize() {
@@ -313,6 +349,9 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       });
     }
 
+    shapeKindSelect.value = selectedShapeKind;
+    strokeWidthInput.value = String(baseStrokeWidth);
+    strokeWidthValue.textContent = `${baseStrokeWidth}px`;
     updateToolIndicator(selectedTool);
     updateShapeKindIndicator(selectedShapeKind);
     updateColorIndicator(strokeColor);
@@ -1383,6 +1422,7 @@ ${items}
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", onPointerUp);
@@ -1390,6 +1430,39 @@ ${items}
   canvas.addEventListener("wheel", onWheel);
   canvas.addEventListener("contextmenu", onContextMenu);
   updateCursor();
+
+  function onPreferencesChanged(event: CustomEvent<{
+    defaultStrokeWidth?: number;
+    defaultShapeKind?: ShapeKind;
+    defaultCanvasColor?: string;
+  }>) {
+    if (typeof event.detail.defaultStrokeWidth === "number") {
+      baseStrokeWidth = event.detail.defaultStrokeWidth;
+      const strokeWidthInput = container.querySelector<HTMLInputElement>("#stroke-width");
+      const strokeWidthValue = container.querySelector<HTMLOutputElement>("#stroke-width-value");
+
+      if (strokeWidthInput && strokeWidthValue) {
+        strokeWidthInput.value = String(baseStrokeWidth);
+        strokeWidthValue.textContent = `${baseStrokeWidth}px`;
+      }
+    }
+
+    if (event.detail.defaultShapeKind === "rectangle" || event.detail.defaultShapeKind === "ellipse" || event.detail.defaultShapeKind === "line") {
+      selectedShapeKind = event.detail.defaultShapeKind;
+      const shapeKindSelect = container.querySelector<HTMLSelectElement>("#shape-kind");
+
+      if (shapeKindSelect) {
+        shapeKindSelect.value = selectedShapeKind;
+      }
+
+      updateShapeKindIndicator(selectedShapeKind);
+    }
+
+    if (typeof event.detail.defaultCanvasColor === "string") {
+      strokeColor = event.detail.defaultCanvasColor;
+      updateColorIndicator(strokeColor);
+    }
+  }
 
   function toCanvasBackgroundPattern(pattern: BackgroundPattern): CanvasBackgroundPattern {
     if (pattern === "dotted") {
@@ -1538,6 +1611,7 @@ ${items}
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("resize", resizeCanvas);
+      window.removeEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);

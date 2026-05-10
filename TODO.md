@@ -6,8 +6,6 @@
 
 ## Active TODOs
 
-- [ ] 3 UX add-config-and-toolbar-icons
-
 ## Done TODOs
 
 - [x] 0 Architecture architecture-foundation-and-pdfium-gate
@@ -16,6 +14,7 @@
 - [x] 1 Canvas add-tablet-pressure-and-stroke-width
 - [x] 2 Reading add-tts-and-reliability-pipeline
 - [x] 3 Canvas add-draw-shapes
+- [x] 3 UX add-config-and-toolbar-icons
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste
@@ -347,7 +346,7 @@ Notes:
 
 Priority: 3
 Area: UX
-Status: pending
+Status: done
 Depends on: split-main-into-shell-and-modes
 
 Goal:

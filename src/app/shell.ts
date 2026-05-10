@@ -17,6 +17,55 @@ type AutosaveRecord = {
   snapshot: WorkspaceDocumentSnapshot;
 };
 
+type AppPreferences = {
+  defaultStrokeWidth: number;
+  defaultShapeKind: "rectangle" | "ellipse" | "line";
+  defaultCanvasColor: string;
+  speechRate: number;
+  recolorEnabled: boolean;
+  recolorForeground: string;
+  recolorBackground: string;
+};
+
+const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
+
+function defaultPreferences(): AppPreferences {
+  return {
+    defaultStrokeWidth: 3,
+    defaultShapeKind: "rectangle",
+    defaultCanvasColor: "#c0caf5",
+    speechRate: 1,
+    recolorEnabled: false,
+    recolorForeground: "#c0caf5",
+    recolorBackground: "#1a1b26",
+  };
+}
+
+function readPreferences() {
+  const rawValue = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
+
+  if (!rawValue) {
+    return defaultPreferences();
+  }
+
+  try {
+    return {
+      ...defaultPreferences(),
+      ...(JSON.parse(rawValue) as Partial<AppPreferences>),
+    };
+  } catch (error) {
+    console.error("Could not parse app preferences:", error);
+    return defaultPreferences();
+  }
+}
+
+function writePreferences(preferences: AppPreferences) {
+  window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+  window.dispatchEvent(new CustomEvent("rpdf:preferences-changed", {
+    detail: preferences,
+  }));
+}
+
 export function mountAppShell(root: HTMLElement) {
   const state = new AppStateStore();
 
@@ -28,8 +77,8 @@ export function mountAppShell(root: HTMLElement) {
           <div class="brand-copy">study shell</div>
         </div>
 
-        <button class="mode-button active" data-mode="canvas" type="button">Canvas</button>
-        <button class="mode-button" data-mode="pdf" type="button">PDF</button>
+        <button class="mode-button active" data-mode="canvas" type="button"><span class="button-icon" aria-hidden="true">✎</span><span>Canvas</span></button>
+        <button class="mode-button" data-mode="pdf" type="button"><span class="button-icon" aria-hidden="true">📄</span><span>PDF</span></button>
       </aside>
 
       <main class="workspace-panel">
@@ -45,9 +94,46 @@ export function mountAppShell(root: HTMLElement) {
               <input id="project-path-input" type="text" placeholder="/tmp/canvas-project.rpdf.json" />
             </label>
             <div class="project-action-row">
-              <button id="project-save-button" class="project-action-button" type="button">Save</button>
-              <button id="project-load-button" class="project-action-button secondary" type="button">Load</button>
+              <button id="project-save-button" class="project-action-button" type="button"><span class="button-icon" aria-hidden="true">💾</span><span>Save</span></button>
+              <button id="project-load-button" class="project-action-button secondary" type="button"><span class="button-icon" aria-hidden="true">📂</span><span>Load</span></button>
+              <button id="settings-toggle-button" class="project-action-button secondary" type="button"><span class="button-icon" aria-hidden="true">⚙</span><span>Settings</span></button>
             </div>
+            <section id="settings-panel" class="settings-panel" hidden>
+              <label class="settings-field">
+                <span>Default stroke width</span>
+                <input id="settings-stroke-width" type="range" min="1" max="24" step="1" />
+              </label>
+              <label class="settings-field">
+                <span>Default shape</span>
+                <select id="settings-shape-kind">
+                  <option value="rectangle">Rectangle</option>
+                  <option value="ellipse">Ellipse</option>
+                  <option value="line">Line</option>
+                </select>
+              </label>
+              <label class="settings-field">
+                <span>Default pen color</span>
+                <input id="settings-canvas-color" type="color" />
+              </label>
+              <label class="settings-field">
+                <span>Speech rate</span>
+                <input id="settings-speech-rate" type="range" min="0.6" max="1.6" step="0.1" />
+              </label>
+              <label class="settings-field settings-checkbox">
+                <input id="settings-recolor-enabled" type="checkbox" />
+                <span>Enable recolor defaults for future PDF imports</span>
+              </label>
+              <div class="settings-color-row">
+                <label class="settings-field">
+                  <span>Recolor foreground</span>
+                  <input id="settings-recolor-foreground" type="color" />
+                </label>
+                <label class="settings-field">
+                  <span>Recolor background</span>
+                  <input id="settings-recolor-background" type="color" />
+                </label>
+              </div>
+            </section>
             <div class="project-action-row recovery-row">
               <button id="autosave-restore-button" class="project-action-button secondary" type="button" hidden>Restore autosave</button>
               <button id="autosave-clear-button" class="project-action-button secondary" type="button" hidden>Clear recovery</button>
@@ -70,6 +156,15 @@ export function mountAppShell(root: HTMLElement) {
   const projectPathInput = requireElement<HTMLInputElement>(root, "#project-path-input");
   const saveButton = requireElement<HTMLButtonElement>(root, "#project-save-button");
   const loadButton = requireElement<HTMLButtonElement>(root, "#project-load-button");
+  const settingsToggleButton = requireElement<HTMLButtonElement>(root, "#settings-toggle-button");
+  const settingsPanel = requireElement<HTMLElement>(root, "#settings-panel");
+  const settingsStrokeWidth = requireElement<HTMLInputElement>(root, "#settings-stroke-width");
+  const settingsShapeKind = requireElement<HTMLSelectElement>(root, "#settings-shape-kind");
+  const settingsCanvasColor = requireElement<HTMLInputElement>(root, "#settings-canvas-color");
+  const settingsSpeechRate = requireElement<HTMLInputElement>(root, "#settings-speech-rate");
+  const settingsRecolorEnabled = requireElement<HTMLInputElement>(root, "#settings-recolor-enabled");
+  const settingsRecolorForeground = requireElement<HTMLInputElement>(root, "#settings-recolor-foreground");
+  const settingsRecolorBackground = requireElement<HTMLInputElement>(root, "#settings-recolor-background");
   const autosaveRestoreButton = requireElement<HTMLButtonElement>(root, "#autosave-restore-button");
   const autosaveClearButton = requireElement<HTMLButtonElement>(root, "#autosave-clear-button");
   const autosaveStatus = requireElement<HTMLElement>(root, "#autosave-status");
@@ -77,6 +172,7 @@ export function mountAppShell(root: HTMLElement) {
 
   let activeWorkspace: WorkspaceController | null = null;
   let bootstrap: AppBootstrap | null = null;
+  let preferences = readPreferences();
 
   const modeMetadata: Record<AppMode, { title: string; copy: string }> = {
     canvas: {
@@ -104,6 +200,16 @@ export function mountAppShell(root: HTMLElement) {
     canvas: "rpdf.autosave.canvas",
     pdf: "rpdf.autosave.pdf",
   };
+
+  function syncSettingsPanel() {
+    settingsStrokeWidth.value = String(preferences.defaultStrokeWidth);
+    settingsShapeKind.value = preferences.defaultShapeKind;
+    settingsCanvasColor.value = preferences.defaultCanvasColor;
+    settingsSpeechRate.value = String(preferences.speechRate);
+    settingsRecolorEnabled.checked = preferences.recolorEnabled;
+    settingsRecolorForeground.value = preferences.recolorForeground;
+    settingsRecolorBackground.value = preferences.recolorBackground;
+  }
 
   function renderMode(mode: AppMode) {
     for (const button of modeButtons) {
@@ -326,6 +432,70 @@ export function mountAppShell(root: HTMLElement) {
     renderMode(mode);
   });
 
+  settingsToggleButton.addEventListener("click", () => {
+    settingsPanel.hidden = !settingsPanel.hidden;
+  });
+
+  settingsStrokeWidth.addEventListener("input", () => {
+    preferences = {
+      ...preferences,
+      defaultStrokeWidth: Number(settingsStrokeWidth.value),
+    };
+    writePreferences(preferences);
+  });
+
+  settingsShapeKind.addEventListener("change", () => {
+    if (settingsShapeKind.value !== "rectangle" && settingsShapeKind.value !== "ellipse" && settingsShapeKind.value !== "line") {
+      return;
+    }
+
+    preferences = {
+      ...preferences,
+      defaultShapeKind: settingsShapeKind.value,
+    };
+    writePreferences(preferences);
+  });
+
+  settingsCanvasColor.addEventListener("input", () => {
+    preferences = {
+      ...preferences,
+      defaultCanvasColor: settingsCanvasColor.value,
+    };
+    writePreferences(preferences);
+  });
+
+  settingsSpeechRate.addEventListener("input", () => {
+    preferences = {
+      ...preferences,
+      speechRate: Number(settingsSpeechRate.value),
+    };
+    writePreferences(preferences);
+  });
+
+  settingsRecolorEnabled.addEventListener("change", () => {
+    preferences = {
+      ...preferences,
+      recolorEnabled: settingsRecolorEnabled.checked,
+    };
+    writePreferences(preferences);
+  });
+
+  settingsRecolorForeground.addEventListener("input", () => {
+    preferences = {
+      ...preferences,
+      recolorForeground: settingsRecolorForeground.value,
+    };
+    writePreferences(preferences);
+  });
+
+  settingsRecolorBackground.addEventListener("input", () => {
+    preferences = {
+      ...preferences,
+      recolorBackground: settingsRecolorBackground.value,
+    };
+    writePreferences(preferences);
+  });
+
   window.setInterval(() => {
     try {
       writeAutosaveSnapshot();
@@ -352,6 +522,8 @@ export function mountAppShell(root: HTMLElement) {
       backendStatus.textContent = "Backend bootstrap failed";
       backendStatus.title = String(error);
     });
+
+  syncSettingsPanel();
 }
 
 function requireElement<T extends Element>(root: ParentNode, selector: string) {

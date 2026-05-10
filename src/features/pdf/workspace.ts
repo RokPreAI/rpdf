@@ -40,6 +40,8 @@ type PdfWorkspaceState = {
   isSpeaking: boolean;
 };
 
+const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
+
 export function mountPdfWorkspace(
   container: HTMLElement,
   bootstrap: AppBootstrap | null,
@@ -54,8 +56,8 @@ export function mountPdfWorkspace(
             <input id="pdf-path-input" type="text" placeholder="/home/rok/Documents/paper.pdf" />
           </label>
           <div class="pdf-action-row">
-            <button id="pdf-open-button" class="pdf-button" type="button">Open PDF</button>
-            <button id="pdf-refresh-button" class="pdf-button ghost" type="button">Refresh</button>
+            <button id="pdf-open-button" class="pdf-button" type="button">📂 Open PDF</button>
+            <button id="pdf-refresh-button" class="pdf-button ghost" type="button">↻ Refresh</button>
           </div>
           <p id="pdf-open-error" class="pdf-inline-error" hidden></p>
         </div>
@@ -63,8 +65,8 @@ export function mountPdfWorkspace(
         <div class="pdf-card pdf-sidebar-card">
           <div class="pdf-kicker">Navigation</div>
           <div class="pdf-action-row">
-            <button id="pdf-prev-button" class="pdf-button ghost" type="button">Previous</button>
-            <button id="pdf-next-button" class="pdf-button ghost" type="button">Next</button>
+            <button id="pdf-prev-button" class="pdf-button ghost" type="button">← Previous</button>
+            <button id="pdf-next-button" class="pdf-button ghost" type="button">Next →</button>
           </div>
           <div id="pdf-page-label" class="pdf-page-label">No document open</div>
           <p class="pdf-helper-copy">
@@ -85,9 +87,9 @@ export function mountPdfWorkspace(
         <div class="pdf-card pdf-sidebar-card">
           <div class="pdf-kicker">Reading controls</div>
           <div class="pdf-action-row">
-            <button id="pdf-read-button" class="pdf-button" type="button">Read page</button>
-            <button id="pdf-stop-button" class="pdf-button ghost" type="button">Stop</button>
-            <button id="pdf-ocr-button" class="pdf-button ghost" type="button">Run OCR fallback</button>
+            <button id="pdf-read-button" class="pdf-button" type="button">▶ Read page</button>
+            <button id="pdf-stop-button" class="pdf-button ghost" type="button">■ Stop</button>
+            <button id="pdf-ocr-button" class="pdf-button ghost" type="button">◌ Run OCR fallback</button>
           </div>
           <p id="pdf-reading-status" class="pdf-helper-copy">
             Reading is local and page-scoped. Weak extraction does not imply reliable follow-along.
@@ -182,6 +184,7 @@ export function mountPdfWorkspace(
   const annotationsByPage = new Map<number, AnnotationStroke[]>();
   let currentStroke: AnnotationStroke | null = null;
   let documentId: string = crypto.randomUUID();
+  let speechRate = readSpeechRatePreference();
 
   function getCurrentPageStrokes() {
     const strokes = annotationsByPage.get(state.pageIndex);
@@ -336,6 +339,22 @@ export function mountPdfWorkspace(
     renderReadingPanel();
   }
 
+  function readSpeechRatePreference() {
+    const rawValue = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
+
+    if (!rawValue) {
+      return 1;
+    }
+
+    try {
+      const parsed = JSON.parse(rawValue) as Partial<{ speechRate: number }>;
+      return typeof parsed.speechRate === "number" ? parsed.speechRate : 1;
+    } catch (error) {
+      console.error("Could not parse PDF preferences:", error);
+      return 1;
+    }
+  }
+
   function speakCurrentPage() {
     const text = currentReadableText();
     const extraction = activeExtraction();
@@ -354,7 +373,7 @@ export function mountPdfWorkspace(
 
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
+    utterance.rate = speechRate;
     utterance.onstart = () => {
       state.isSpeaking = true;
       state.readingStatus = extraction.reliability === "native_reliable" || extraction.reliability === "ocr_reliable"
@@ -647,10 +666,17 @@ export function mountPdfWorkspace(
   annotationLayer.addEventListener("pointerup", onPointerUp);
   annotationLayer.addEventListener("pointercancel", onPointerUp);
   window.addEventListener("resize", resizeAnnotationLayer);
+  window.addEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
 
   backendName.textContent = `${bootstrap?.activePdfBackend.backendName ?? "Backend unavailable"}: ${bootstrap?.activePdfBackend.configured ? "ready" : "boundary only"}`;
   renderBackendNotes(bootstrap?.activePdfBackend.notes ?? []);
   renderDocumentState();
+
+  function onPreferencesChanged(event: CustomEvent<{ speechRate?: number }>) {
+    if (typeof event.detail.speechRate === "number") {
+      speechRate = event.detail.speechRate;
+    }
+  }
 
   return {
     exportDocument(): WorkspaceDocumentSnapshot {
@@ -746,6 +772,7 @@ export function mountPdfWorkspace(
       annotationLayer.removeEventListener("pointermove", onPointerMove);
       annotationLayer.removeEventListener("pointerup", onPointerUp);
       annotationLayer.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
       container.replaceChildren();
     },
   };

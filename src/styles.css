@@ -86,6 +86,9 @@ button {
 }
 
 .mode-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid rgba(192, 202, 245, 0.12);
   border-radius: var(--medium-radius);
   background: rgba(192, 202, 245, 0.04);
@@ -165,6 +168,9 @@ button {
 }
 
 .project-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid rgba(122, 162, 247, 0.5);
   border-radius: var(--medium-radius);
   background: rgba(122, 162, 247, 0.16);
@@ -182,6 +188,47 @@ button {
   font-size: 0.78rem;
   color: var(--fg-dark);
   text-align: right;
+}
+
+.button-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(192, 202, 245, 0.08);
+  border-radius: var(--medium-radius);
+  background: rgba(12, 14, 20, 0.56);
+}
+
+.settings-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--fg-dark);
+}
+
+.settings-field input,
+.settings-field select {
+  border: 1px solid rgba(192, 202, 245, 0.16);
+  border-radius: var(--medium-radius);
+  background: rgba(12, 14, 20, 0.8);
+  color: var(--fg);
+  padding: 8px 10px;
+}
+
+.settings-checkbox {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.settings-color-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .workspace-root {
