@@ -2,10 +2,6 @@
 
 ## Current TODOs
 
-- [ ] 3 PDF add-pdf-page-import-and-recolor
-
-## Active TODOs
-
 ## Done TODOs
 
 - [x] 0 Architecture architecture-foundation-and-pdfium-gate
@@ -13,6 +9,7 @@
 - [x] 1 App split-main-into-shell-and-modes
 - [x] 1 Canvas add-tablet-pressure-and-stroke-width
 - [x] 2 Reading add-tts-and-reliability-pipeline
+- [x] 3 PDF add-pdf-page-import-and-recolor
 - [x] 3 Canvas add-draw-shapes
 - [x] 3 UX add-config-and-toolbar-icons
 - [x] 6 Canvas add-color-picker
@@ -293,7 +290,7 @@ Notes:
 
 Priority: 3
 Area: PDF
-Status: pending
+Status: done
 Depends on: build-pdf-mode-shell, architecture-foundation-and-pdfium-gate
 
 Goal:

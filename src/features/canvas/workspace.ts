@@ -2,6 +2,8 @@ import type {
   CanvasBackgroundPattern,
   CanvasDocument,
   CanvasImagePlacementDocument,
+  CanvasPdfPagePlacementDocument,
+  PdfRecolorSettingsDocument,
   CanvasShapeDocument,
   CanvasShapeKindDocument,
   WorkspaceController,
@@ -55,6 +57,28 @@ type CanvasImage = {
   height: number;
 };
 
+type CanvasPdfPage = {
+  id: string;
+  sourcePdfPath: string;
+  pageIndex: number;
+  assetPath: string;
+  image: HTMLImageElement;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  recolor: PdfRecolorSettingsDocument;
+};
+
+type PendingPdfPageImport = {
+  sourcePdfPath: string;
+  pageIndex: number;
+  assetPath: string;
+  width: number;
+  height: number;
+  recolor: PdfRecolorSettingsDocument;
+};
+
 type SelectionTarget =
   | {
     kind: "stroke";
@@ -66,6 +90,10 @@ type SelectionTarget =
   }
   | {
     kind: "image";
+    index: number;
+  }
+  | {
+    kind: "pdf_page";
     index: number;
   };
 
@@ -138,6 +166,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   const strokes: Stroke[] = [];
   const shapes: Shape[] = [];
   const images: CanvasImage[] = [];
+  const pdfPages: CanvasPdfPage[] = [];
   const backgroundColor = "#1a1b26";
   const gridColor = "#292e42";
   const backgroundPattern: BackgroundPattern = "dotted";
@@ -584,6 +613,24 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.restore();
   }
 
+  function drawPdfPages() {
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.scale, camera.scale);
+
+    for (const pdfPage of pdfPages) {
+      ctx.drawImage(
+        pdfPage.image,
+        pdfPage.x,
+        pdfPage.y,
+        pdfPage.width,
+        pdfPage.height,
+      );
+    }
+
+    ctx.restore();
+  }
+
   function orderedVectorItems() {
     return [...strokes, ...shapes].sort((firstItem, secondItem) => firstItem.order - secondItem.order);
   }
@@ -605,6 +652,12 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
       if (image) {
         ctx.strokeRect(image.x, image.y, image.width, image.height);
+      }
+    } else if (selectedItem.kind === "pdf_page") {
+      const pdfPage = pdfPages[selectedItem.index];
+
+      if (pdfPage) {
+        ctx.strokeRect(pdfPage.x, pdfPage.y, pdfPage.width, pdfPage.height);
       }
     } else if (selectedItem.kind === "shape") {
       const shape = shapes[selectedItem.index];
@@ -637,6 +690,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       };
     }
 
+    if (selectedItem?.kind === "pdf_page") {
+      return {
+        eligible: false,
+        message: "SVG export is disabled for imported PDF page selections.",
+        vectors: [] as VectorItem[],
+      };
+    }
+
     if (selectedItem?.kind === "stroke") {
       const stroke = strokes[selectedItem.index];
 
@@ -665,10 +726,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       };
     }
 
-    if (images.length > 0) {
+    if (images.length > 0 || pdfPages.length > 0) {
       return {
         eligible: false,
-        message: "SVG export is disabled while the canvas contains raster images. Select a vector item or remove images.",
+        message: "SVG export is disabled while the canvas contains raster images or PDF page imports. Select a vector item or remove raster content.",
         vectors: [] as VectorItem[],
       };
     }
@@ -707,6 +768,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     drawGrid();
     drawImages();
+    drawPdfPages();
 
     for (const vectorItem of orderedVectorItems()) {
       if ("points" in vectorItem) {
@@ -783,6 +845,18 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   function eraseAtPoint(point: Point) {
     const eraserRadius = 12 / camera.scale;
+
+    for (let pdfPageIndex = pdfPages.length - 1; pdfPageIndex >= 0; pdfPageIndex -= 1) {
+      const pdfPage = pdfPages[pdfPageIndex];
+      const withinPdfPage = point.x >= pdfPage.x - eraserRadius
+        && point.x <= pdfPage.x + pdfPage.width + eraserRadius
+        && point.y >= pdfPage.y - eraserRadius
+        && point.y <= pdfPage.y + pdfPage.height + eraserRadius;
+
+      if (withinPdfPage) {
+        pdfPages.splice(pdfPageIndex, 1);
+      }
+    }
 
     for (let shapeIndex = shapes.length - 1; shapeIndex >= 0; shapeIndex -= 1) {
       if (shapeContainsPoint(shapes[shapeIndex], point, eraserRadius)) {
@@ -947,6 +1021,22 @@ ${items}
   }
 
   function hitTestSelection(point: Point): SelectionTarget | null {
+    for (let pdfPageIndex = pdfPages.length - 1; pdfPageIndex >= 0; pdfPageIndex -= 1) {
+      const pdfPage = pdfPages[pdfPageIndex];
+
+      if (
+        point.x >= pdfPage.x
+        && point.x <= pdfPage.x + pdfPage.width
+        && point.y >= pdfPage.y
+        && point.y <= pdfPage.y + pdfPage.height
+      ) {
+        return {
+          kind: "pdf_page",
+          index: pdfPageIndex,
+        };
+      }
+    }
+
     for (let imageIndex = images.length - 1; imageIndex >= 0; imageIndex -= 1) {
       const image = images[imageIndex];
 
@@ -1019,6 +1109,18 @@ ${items}
       return;
     }
 
+    if (selectedItem.kind === "pdf_page") {
+      const pdfPage = pdfPages[selectedItem.index];
+
+      if (!pdfPage) {
+        return;
+      }
+
+      pdfPage.x += deltaX;
+      pdfPage.y += deltaY;
+      return;
+    }
+
     if (selectedItem.kind === "shape") {
       const shape = shapes[selectedItem.index];
 
@@ -1063,6 +1165,37 @@ ${items}
       height: imageHeight,
     });
 
+    redraw();
+  }
+
+  function addLoadedPdfPage(
+    image: HTMLImageElement,
+    payload: PendingPdfPageImport,
+  ) {
+    const { width, height } = getCanvasSize();
+    const centerWorld = screenPointToWorld(width / 2, height / 2);
+    const maxImageScreenWidth = width * 0.65;
+    const scale = Math.min(1, maxImageScreenWidth / image.naturalWidth);
+    const pageWidth = (image.naturalWidth * scale) / camera.scale;
+    const pageHeight = (image.naturalHeight * scale) / camera.scale;
+
+    pdfPages.push({
+      id: crypto.randomUUID(),
+      sourcePdfPath: payload.sourcePdfPath,
+      pageIndex: payload.pageIndex,
+      assetPath: payload.assetPath,
+      image,
+      x: centerWorld.x - pageWidth / 2,
+      y: centerWorld.y - pageHeight / 2,
+      width: pageWidth,
+      height: pageHeight,
+      recolor: payload.recolor,
+    });
+
+    selectedItem = {
+      kind: "pdf_page",
+      index: pdfPages.length - 1,
+    };
     redraw();
   }
 
@@ -1247,6 +1380,16 @@ ${items}
     }
   };
 
+  const onPdfPageImport = (event: CustomEvent<PendingPdfPageImport>) => {
+    loadImageFromSource(event.detail.assetPath)
+      .then((image) => {
+        addLoadedPdfPage(image, event.detail);
+      })
+      .catch((error) => {
+        console.error("Failed to import PDF page into canvas:", error);
+      });
+  };
+
   const onPointerDown = (event: PointerEvent) => {
     const point = screenToWorld(event.clientX, event.clientY);
     const pressure = getPointerPressure(event);
@@ -1404,6 +1547,8 @@ ${items}
     if (!event.ctrlKey && event.key.toLowerCase() === "c") {
       strokes.length = 0;
       shapes.length = 0;
+      images.length = 0;
+      pdfPages.length = 0;
       selectedItem = null;
       redraw();
     }
@@ -1423,6 +1568,7 @@ ${items}
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("resize", resizeCanvas);
   window.addEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
+  window.addEventListener("rpdf:canvas-import-pdf-page", onPdfPageImport as EventListener);
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", onPointerUp);
@@ -1519,6 +1665,30 @@ ${items}
     images.push(...loadedImages);
   }
 
+  async function importPdfPages(pdfPagePlacements: CanvasPdfPagePlacementDocument[]) {
+    const loadedPdfPages = await Promise.all(
+      pdfPagePlacements.map(async (placement) => {
+        const image = await loadImageFromSource(placement.assetPath);
+
+        return {
+          id: placement.id,
+          sourcePdfPath: placement.sourcePdfPath,
+          pageIndex: placement.pageIndex,
+          assetPath: placement.assetPath,
+          image,
+          x: placement.x,
+          y: placement.y,
+          width: placement.width,
+          height: placement.height,
+          recolor: placement.recolor,
+        } satisfies CanvasPdfPage;
+      }),
+    );
+
+    pdfPages.length = 0;
+    pdfPages.push(...loadedPdfPages);
+  }
+
   return {
     exportDocument(): WorkspaceDocumentSnapshot {
       const document: CanvasDocument = {
@@ -1547,6 +1717,17 @@ ${items}
           width: image.width,
           height: image.height,
         })),
+        pdfPages: pdfPages.map((pdfPage) => ({
+          id: pdfPage.id,
+          sourcePdfPath: pdfPage.sourcePdfPath,
+          pageIndex: pdfPage.pageIndex,
+          assetPath: pdfPage.assetPath,
+          x: pdfPage.x,
+          y: pdfPage.y,
+          width: pdfPage.width,
+          height: pdfPage.height,
+          recolor: pdfPage.recolor,
+        })),
       };
 
       return {
@@ -1564,6 +1745,7 @@ ${items}
       moveAnchorPoint = null;
       strokes.length = 0;
       shapes.length = 0;
+      pdfPages.length = 0;
 
       strokes.push(
         ...snapshot.document.strokes.map((stroke, index) => ({
@@ -1604,6 +1786,7 @@ ${items}
       );
 
       await importImages(snapshot.document.images);
+      await importPdfPages(snapshot.document.pdfPages ?? []);
       redraw();
     },
     destroy() {
@@ -1612,6 +1795,7 @@ ${items}
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("resize", resizeCanvas);
       window.removeEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
+      window.removeEventListener("rpdf:canvas-import-pdf-page", onPdfPageImport as EventListener);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);

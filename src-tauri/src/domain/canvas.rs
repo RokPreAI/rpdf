@@ -15,6 +15,8 @@ pub struct CanvasDocument {
     #[serde(default)]
     pub shapes: Vec<CanvasShape>,
     pub images: Vec<CanvasImagePlacement>,
+    #[serde(default)]
+    pub pdf_pages: Vec<CanvasPdfPagePlacement>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -76,4 +78,24 @@ pub struct CanvasImagePlacement {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CanvasPdfPagePlacement {
+    pub id: String,
+    pub source_pdf_path: String,
+    pub page_index: u32,
+    pub asset_path: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub recolor: CanvasPdfPageRecolor,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CanvasPdfPageRecolor {
+    pub enabled: bool,
+    pub foreground: String,
+    pub background: String,
 }

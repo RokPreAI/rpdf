@@ -17,6 +17,19 @@ type AutosaveRecord = {
   snapshot: WorkspaceDocumentSnapshot;
 };
 
+type PendingPdfPageImport = {
+  sourcePdfPath: string;
+  pageIndex: number;
+  assetPath: string;
+  width: number;
+  height: number;
+  recolor: {
+    enabled: boolean;
+    foreground: string;
+    background: string;
+  };
+};
+
 type AppPreferences = {
   defaultStrokeWidth: number;
   defaultShapeKind: "rectangle" | "ellipse" | "line";
@@ -430,6 +443,23 @@ export function mountAppShell(root: HTMLElement) {
 
   state.subscribe(({ mode }) => {
     renderMode(mode);
+  });
+
+  window.addEventListener("rpdf:request-pdf-page-import", (event) => {
+    const customEvent = event as CustomEvent<PendingPdfPageImport>;
+    const dispatchImport = () => {
+      window.dispatchEvent(new CustomEvent("rpdf:canvas-import-pdf-page", {
+        detail: customEvent.detail,
+      }));
+    };
+
+    if (state.snapshot.mode !== "canvas") {
+      state.setMode("canvas");
+      window.setTimeout(dispatchImport, 0);
+      return;
+    }
+
+    dispatchImport();
   });
 
   settingsToggleButton.addEventListener("click", () => {

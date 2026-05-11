@@ -8,6 +8,7 @@ import type {
   PageTextExtraction,
   PdfBackendStatus,
   PdfPageAnnotationLayerDocument,
+  PdfRecolorSettingsDocument,
   PdfStudyDocument,
   ReadingReliabilityState,
   RenderPdfPageRequest,
@@ -34,10 +35,12 @@ type PdfWorkspaceState = {
   ocrExtraction: PageTextExtraction | null;
   backendStatus: PdfBackendStatus | null;
   pageRender: RenderPdfPageResponse | null;
+  pageImageDataUrl: string | null;
   pageError: string | null;
   readingStatus: string;
   isOcrRunning: boolean;
   isSpeaking: boolean;
+  recolor: PdfRecolorSettingsDocument;
 };
 
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
@@ -98,6 +101,30 @@ export function mountPdfWorkspace(
             Open a document to inspect extracted reading text for the current page.
           </div>
         </div>
+
+        <div class="pdf-card pdf-sidebar-card">
+          <div class="pdf-kicker">Recolor and import</div>
+          <label class="settings-field settings-checkbox">
+            <input id="pdf-recolor-enabled" type="checkbox" />
+            <span>Enable recolor for the current page</span>
+          </label>
+          <div class="settings-color-row">
+            <label class="settings-field">
+              <span>Foreground</span>
+              <input id="pdf-recolor-foreground" type="color" />
+            </label>
+            <label class="settings-field">
+              <span>Background</span>
+              <input id="pdf-recolor-background" type="color" />
+            </label>
+          </div>
+          <div class="pdf-action-row">
+            <button id="pdf-import-canvas-button" class="pdf-button ghost" type="button">⇢ Import page to canvas</button>
+          </div>
+          <p class="pdf-helper-copy">
+            Imported canvas pages preserve the page path, page index, and the recolor settings used at import time.
+          </p>
+        </div>
       </aside>
 
       <section class="pdf-viewer-panel">
@@ -142,10 +169,12 @@ export function mountPdfWorkspace(
     ocrExtraction: null,
     backendStatus: bootstrap?.activePdfBackend ?? null,
     pageRender: null,
+    pageImageDataUrl: null,
     pageError: null,
     readingStatus: "Reading is local and page-scoped. Weak extraction does not imply reliable follow-along.",
     isOcrRunning: false,
     isSpeaking: false,
+    recolor: readPdfPreferences().recolor,
   };
 
   const pathInput = requireElement<HTMLInputElement>(container, "#pdf-path-input");
@@ -156,6 +185,7 @@ export function mountPdfWorkspace(
   const readButton = requireElement<HTMLButtonElement>(container, "#pdf-read-button");
   const stopButton = requireElement<HTMLButtonElement>(container, "#pdf-stop-button");
   const ocrButton = requireElement<HTMLButtonElement>(container, "#pdf-ocr-button");
+  const importCanvasButton = requireElement<HTMLButtonElement>(container, "#pdf-import-canvas-button");
   const pageLabel = requireElement<HTMLElement>(container, "#pdf-page-label");
   const openError = requireElement<HTMLElement>(container, "#pdf-open-error");
   const reliabilityBadge = requireElement<HTMLElement>(container, "#pdf-reliability-badge");
@@ -164,6 +194,9 @@ export function mountPdfWorkspace(
   const backendNotesList = requireElement<HTMLElement>(container, "#pdf-backend-notes");
   const readingStatus = requireElement<HTMLElement>(container, "#pdf-reading-status");
   const textPreview = requireElement<HTMLElement>(container, "#pdf-text-preview");
+  const recolorEnabledInput = requireElement<HTMLInputElement>(container, "#pdf-recolor-enabled");
+  const recolorForegroundInput = requireElement<HTMLInputElement>(container, "#pdf-recolor-foreground");
+  const recolorBackgroundInput = requireElement<HTMLInputElement>(container, "#pdf-recolor-background");
   const documentTitle = requireElement<HTMLElement>(container, "#pdf-document-title");
   const backendName = requireElement<HTMLElement>(container, "#pdf-backend-name");
   const pageCountCopy = requireElement<HTMLElement>(container, "#pdf-page-count-copy");
@@ -249,6 +282,7 @@ export function mountPdfWorkspace(
     readButton.disabled = !state.document || text.length === 0;
     stopButton.disabled = !state.isSpeaking;
     ocrButton.disabled = !state.document || state.isOcrRunning || !canUseOcrFallback(state.nativeExtraction?.reliability ?? "unavailable");
+    importCanvasButton.disabled = !state.document || !state.pageImageDataUrl;
     ocrButton.textContent = state.isOcrRunning ? "Running OCR..." : "Run OCR fallback";
     readingStatus.textContent = state.readingStatus;
 
@@ -339,20 +373,57 @@ export function mountPdfWorkspace(
     renderReadingPanel();
   }
 
-  function readSpeechRatePreference() {
+  function readPdfPreferences() {
     const rawValue = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
 
     if (!rawValue) {
-      return 1;
+      return {
+        speechRate: 1,
+        recolor: {
+          enabled: false,
+          foreground: "#c0caf5",
+          background: "#1a1b26",
+        } satisfies PdfRecolorSettingsDocument,
+      };
     }
 
     try {
-      const parsed = JSON.parse(rawValue) as Partial<{ speechRate: number }>;
-      return typeof parsed.speechRate === "number" ? parsed.speechRate : 1;
+      const parsed = JSON.parse(rawValue) as Partial<{
+        speechRate: number;
+        recolorEnabled: boolean;
+        recolorForeground: string;
+        recolorBackground: string;
+      }>;
+
+      return {
+        speechRate: typeof parsed.speechRate === "number" ? parsed.speechRate : 1,
+        recolor: {
+          enabled: parsed.recolorEnabled ?? false,
+          foreground: parsed.recolorForeground ?? "#c0caf5",
+          background: parsed.recolorBackground ?? "#1a1b26",
+        } satisfies PdfRecolorSettingsDocument,
+      };
     } catch (error) {
       console.error("Could not parse PDF preferences:", error);
-      return 1;
+      return {
+        speechRate: 1,
+        recolor: {
+          enabled: false,
+          foreground: "#c0caf5",
+          background: "#1a1b26",
+        } satisfies PdfRecolorSettingsDocument,
+      };
     }
+  }
+
+  function readSpeechRatePreference() {
+    return readPdfPreferences().speechRate;
+  }
+
+  function syncRecolorControls() {
+    recolorEnabledInput.checked = state.recolor.enabled;
+    recolorForegroundInput.value = state.recolor.foreground;
+    recolorBackgroundInput.value = state.recolor.background;
   }
 
   function speakCurrentPage() {
@@ -394,6 +465,88 @@ export function mountPdfWorkspace(
     window.speechSynthesis.speak(utterance);
   }
 
+  function hexToRgb(hexColor: string) {
+    const normalized = hexColor.replace("#", "");
+    const safe = normalized.length === 3
+      ? normalized.split("").map((value) => `${value}${value}`).join("")
+      : normalized.padEnd(6, "0").slice(0, 6);
+
+    return {
+      r: Number.parseInt(safe.slice(0, 2), 16),
+      g: Number.parseInt(safe.slice(2, 4), 16),
+      b: Number.parseInt(safe.slice(4, 6), 16),
+    };
+  }
+
+  async function buildRenderedPageDataUrl() {
+    if (!state.pageRender) {
+      return null;
+    }
+
+    const baseDataUrl = `data:${state.pageRender.mimeType};base64,${state.pageRender.dataBase64}`;
+
+    if (!state.recolor.enabled) {
+      return baseDataUrl;
+    }
+
+    return new Promise<string>((resolve, reject) => {
+      const image = new Image();
+
+      image.onload = () => {
+        const canvasElement = document.createElement("canvas");
+        canvasElement.width = image.naturalWidth;
+        canvasElement.height = image.naturalHeight;
+        const context2d = canvasElement.getContext("2d");
+
+        if (!context2d) {
+          reject(new Error("Could not get recolor canvas context."));
+          return;
+        }
+
+        context2d.drawImage(image, 0, 0);
+        const imageData = context2d.getImageData(0, 0, canvasElement.width, canvasElement.height);
+        const foreground = hexToRgb(state.recolor.foreground);
+        const background = hexToRgb(state.recolor.background);
+
+        for (let index = 0; index < imageData.data.length; index += 4) {
+          const red = imageData.data[index];
+          const green = imageData.data[index + 1];
+          const blue = imageData.data[index + 2];
+          const alpha = imageData.data[index + 3];
+          const intensity = (red + green + blue) / (255 * 3);
+
+          imageData.data[index] = Math.round(foreground.r * (1 - intensity) + background.r * intensity);
+          imageData.data[index + 1] = Math.round(foreground.g * (1 - intensity) + background.g * intensity);
+          imageData.data[index + 2] = Math.round(foreground.b * (1 - intensity) + background.b * intensity);
+          imageData.data[index + 3] = alpha;
+        }
+
+        context2d.putImageData(imageData, 0, 0);
+        resolve(canvasElement.toDataURL("image/png"));
+      };
+
+      image.onerror = () => {
+        reject(new Error("Could not load page image for recoloring."));
+      };
+
+      image.src = baseDataUrl;
+    });
+  }
+
+  async function refreshRenderedPageImage() {
+    if (!state.pageRender) {
+      state.pageImageDataUrl = null;
+      return;
+    }
+
+    try {
+      state.pageImageDataUrl = await buildRenderedPageDataUrl();
+    } catch (error) {
+      state.pageImageDataUrl = `data:${state.pageRender.mimeType};base64,${state.pageRender.dataBase64}`;
+      state.readingStatus = `Recolor failed: ${String(error)}`;
+    }
+  }
+
   function renderDocumentState() {
     const document = state.document;
     const hasDocument = Boolean(document);
@@ -405,6 +558,7 @@ export function mountPdfWorkspace(
     prevButton.disabled = !hasDocument || state.pageIndex <= 0;
     nextButton.disabled = !hasDocument || (document?.pageCount !== null && document !== null && state.pageIndex >= document.pageCount - 1);
     refreshButton.disabled = !hasDocument;
+    syncRecolorControls();
 
     if (!document) {
       documentTitle.textContent = "PDF Mode";
@@ -440,7 +594,7 @@ export function mountPdfWorkspace(
 
     if (state.pageRender) {
       pageImage.hidden = false;
-      pageImage.src = `data:${state.pageRender.mimeType};base64,${state.pageRender.dataBase64}`;
+      pageImage.src = state.pageImageDataUrl ?? `data:${state.pageRender.mimeType};base64,${state.pageRender.dataBase64}`;
       renderPlaceholder.hidden = true;
     } else {
       pageImage.hidden = true;
@@ -486,6 +640,7 @@ export function mountPdfWorkspace(
 
     stopSpeaking();
     state.pageRender = null;
+    state.pageImageDataUrl = null;
     state.pageError = null;
     state.nativeExtraction = null;
     state.ocrExtraction = null;
@@ -511,6 +666,8 @@ export function mountPdfWorkspace(
     } catch (error) {
       state.pageError = String(error);
     }
+
+    await refreshRenderedPageImage();
 
     await extractNativeText(document.documentPath, state.pageIndex);
     renderDocumentState();
@@ -552,6 +709,26 @@ export function mountPdfWorkspace(
       state.isOcrRunning = false;
       renderDocumentState();
     }
+  }
+
+  function importCurrentPageToCanvas() {
+    if (!state.document || !state.pageRender || !state.pageImageDataUrl) {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent("rpdf:request-pdf-page-import", {
+      detail: {
+        sourcePdfPath: state.document.documentPath,
+        pageIndex: state.pageIndex,
+        assetPath: state.pageImageDataUrl,
+        width: state.pageRender.width,
+        height: state.pageRender.height,
+        recolor: state.recolor,
+      },
+    }));
+
+    state.readingStatus = "Imported the current PDF page into Canvas Mode.";
+    renderReadingPanel();
   }
 
   async function openDocument() {
@@ -655,6 +832,36 @@ export function mountPdfWorkspace(
   ocrButton.addEventListener("click", () => {
     void runOcrFallback();
   });
+  importCanvasButton.addEventListener("click", () => {
+    importCurrentPageToCanvas();
+  });
+  recolorEnabledInput.addEventListener("change", () => {
+    state.recolor = {
+      ...state.recolor,
+      enabled: recolorEnabledInput.checked,
+    };
+    void refreshRenderedPageImage().then(() => {
+      renderDocumentState();
+    });
+  });
+  recolorForegroundInput.addEventListener("input", () => {
+    state.recolor = {
+      ...state.recolor,
+      foreground: recolorForegroundInput.value,
+    };
+    void refreshRenderedPageImage().then(() => {
+      renderDocumentState();
+    });
+  });
+  recolorBackgroundInput.addEventListener("input", () => {
+    state.recolor = {
+      ...state.recolor,
+      background: recolorBackgroundInput.value,
+    };
+    void refreshRenderedPageImage().then(() => {
+      renderDocumentState();
+    });
+  });
   pathInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -672,10 +879,25 @@ export function mountPdfWorkspace(
   renderBackendNotes(bootstrap?.activePdfBackend.notes ?? []);
   renderDocumentState();
 
-  function onPreferencesChanged(event: CustomEvent<{ speechRate?: number }>) {
+  function onPreferencesChanged(event: CustomEvent<{
+    speechRate?: number;
+    recolorEnabled?: boolean;
+    recolorForeground?: string;
+    recolorBackground?: string;
+  }>) {
     if (typeof event.detail.speechRate === "number") {
       speechRate = event.detail.speechRate;
     }
+
+    state.recolor = {
+      enabled: event.detail.recolorEnabled ?? state.recolor.enabled,
+      foreground: event.detail.recolorForeground ?? state.recolor.foreground,
+      background: event.detail.recolorBackground ?? state.recolor.background,
+    };
+    syncRecolorControls();
+    void refreshRenderedPageImage().then(() => {
+      renderDocumentState();
+    });
   }
 
   return {
@@ -714,11 +936,7 @@ export function mountPdfWorkspace(
         pageCount: state.document?.pageCount ?? null,
         currentPageIndex: state.pageIndex,
         annotations,
-        recolor: {
-          enabled: false,
-          foreground: "#c0caf5",
-          background: "#1a1b26",
-        },
+        recolor: state.recolor,
         readingCache,
       };
 
@@ -758,9 +976,11 @@ export function mountPdfWorkspace(
       };
       state.pageIndex = snapshot.document.currentPageIndex;
       state.pageRender = null;
+      state.pageImageDataUrl = null;
       state.pageError = null;
       state.nativeExtraction = null;
       state.ocrExtraction = null;
+      state.recolor = snapshot.document.recolor;
       pathInput.value = snapshot.document.sourcePdfPath;
       await refreshPageState();
       redrawAnnotations();

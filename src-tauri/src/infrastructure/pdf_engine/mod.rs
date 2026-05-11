@@ -47,6 +47,7 @@ impl PdfEngineAdapter for PdfiumEngineAdapter {
             configured: false,
             notes: vec![
                 "The repo now assumes a Pdfium-style Rust integration path.".to_string(),
+                "Page rendering currently uses local pdftoppm until Pdfium rendering is implemented.".to_string(),
                 if poppler_ready {
                     "Native text extraction currently uses local Poppler tools until Pdfium extraction is implemented.".to_string()
                 } else {
@@ -67,10 +68,7 @@ impl PdfEngineAdapter for PdfiumEngineAdapter {
         &self,
         request: &RenderPdfPageRequestDto,
     ) -> Result<RenderPdfPageResponseDto, String> {
-        Err(format!(
-            "Pdfium page rendering is not implemented yet for {} page {}.",
-            request.document_path, request.page_index
-        ))
+        render_pdf_page_png(request)
     }
 
     fn extract_page_text(
@@ -180,6 +178,47 @@ fn run_tesseract_ocr(request: &ExtractPdfTextRequestDto) -> Result<String, Strin
         .map_err(|error| format!("tesseract produced invalid UTF-8 output: {error}"))
 }
 
+fn render_pdf_page_png(
+    request: &RenderPdfPageRequestDto,
+) -> Result<RenderPdfPageResponseDto, String> {
+    let page_number = request.page_index + 1;
+    let prefix = temporary_ocr_prefix(page_number);
+    let image_path = prefix.with_extension("png");
+    let render_output = Command::new("pdftoppm")
+        .args([
+            "-f",
+            &page_number.to_string(),
+            "-l",
+            &page_number.to_string(),
+            "-singlefile",
+            "-r",
+            "180",
+            "-png",
+            &request.document_path,
+            &prefix.to_string_lossy(),
+        ])
+        .output()
+        .map_err(|error| format!("Could not run pdftoppm for PDF page rendering: {error}"))?;
+
+    if !render_output.status.success() {
+        let stderr = String::from_utf8_lossy(&render_output.stderr);
+        return Err(format!("pdftoppm failed: {}", stderr.trim()));
+    }
+
+    let image_bytes = fs::read(&image_path)
+        .map_err(|error| format!("Could not read rendered PDF page image: {error}"))?;
+    let _ = fs::remove_file(&image_path);
+    let (width, height) = png_dimensions(&image_bytes)?;
+
+    Ok(RenderPdfPageResponseDto {
+        page_index: request.page_index,
+        mime_type: "image/png".to_string(),
+        data_base64: encode_base64(&image_bytes),
+        width,
+        height,
+    })
+}
+
 fn temporary_ocr_prefix(page_number: u32) -> PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -187,6 +226,49 @@ fn temporary_ocr_prefix(page_number: u32) -> PathBuf {
         .unwrap_or(0);
 
     std::env::temp_dir().join(format!("rpdf2-ocr-page-{page_number}-{timestamp}"))
+}
+
+fn png_dimensions(image_bytes: &[u8]) -> Result<(u32, u32), String> {
+    if image_bytes.len() < 24 || &image_bytes[0..8] != b"\x89PNG\r\n\x1a\n" {
+        return Err("Rendered page did not produce a valid PNG header.".to_string());
+    }
+
+    let width = u32::from_be_bytes([image_bytes[16], image_bytes[17], image_bytes[18], image_bytes[19]]);
+    let height = u32::from_be_bytes([image_bytes[20], image_bytes[21], image_bytes[22], image_bytes[23]]);
+
+    Ok((width, height))
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    let mut index = 0;
+
+    while index < bytes.len() {
+        let first = bytes[index];
+        let second = if index + 1 < bytes.len() { bytes[index + 1] } else { 0 };
+        let third = if index + 2 < bytes.len() { bytes[index + 2] } else { 0 };
+        let triple = ((first as u32) << 16) | ((second as u32) << 8) | third as u32;
+
+        encoded.push(TABLE[((triple >> 18) & 0x3f) as usize] as char);
+        encoded.push(TABLE[((triple >> 12) & 0x3f) as usize] as char);
+
+        if index + 1 < bytes.len() {
+          encoded.push(TABLE[((triple >> 6) & 0x3f) as usize] as char);
+        } else {
+          encoded.push('=');
+        }
+
+        if index + 2 < bytes.len() {
+          encoded.push(TABLE[(triple & 0x3f) as usize] as char);
+        } else {
+          encoded.push('=');
+        }
+
+        index += 3;
+    }
+
+    encoded
 }
 
 fn build_extraction_response(

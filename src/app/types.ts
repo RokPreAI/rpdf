@@ -67,6 +67,18 @@ export type CanvasImagePlacementDocument = {
   height: number;
 };
 
+export type CanvasPdfPagePlacementDocument = {
+  id: string;
+  sourcePdfPath: string;
+  pageIndex: number;
+  assetPath: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  recolor: PdfRecolorSettingsDocument;
+};
+
 export type CanvasDocument = {
   version: DocumentVersion;
   id: string;
@@ -74,6 +86,7 @@ export type CanvasDocument = {
   strokes: CanvasStrokeDocument[];
   shapes: CanvasShapeDocument[];
   images: CanvasImagePlacementDocument[];
+  pdfPages: CanvasPdfPagePlacementDocument[];
 };
 
 export type OpenPdfDocumentRequest = {
