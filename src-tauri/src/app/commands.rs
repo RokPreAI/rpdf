@@ -12,6 +12,7 @@ use crate::contracts::dto::{
     PdfBackendStatusDto,
     SaveCanvasProjectRequestDto,
     SavePdfStudySessionRequestDto,
+    SpeakTextRequestDto,
     RenderPdfPageRequestDto,
     RenderPdfPageResponseDto,
 };
@@ -90,4 +91,17 @@ pub fn extract_pdf_page_ocr(
     services: State<'_, AppServices>,
 ) -> Result<PageTextExtractionDto, String> {
     services.extract_pdf_page_ocr(&request)
+}
+
+#[tauri::command]
+pub fn speak_text_locally(
+    request: SpeakTextRequestDto,
+    services: State<'_, AppServices>,
+) -> Result<(), String> {
+    services.speak_text_locally(&request)
+}
+
+#[tauri::command]
+pub fn stop_local_speech(services: State<'_, AppServices>) -> Result<(), String> {
+    services.stop_local_speech()
 }

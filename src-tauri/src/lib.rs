@@ -7,11 +7,13 @@ use app::commands::{
     extract_pdf_page_ocr,
     extract_pdf_page_text,
     get_app_bootstrap,
+    stop_local_speech,
     load_canvas_project,
     load_pdf_study_session,
     open_pdf_document,
     save_canvas_project,
     save_pdf_study_session,
+    speak_text_locally,
     get_pdf_backend_status,
     render_pdf_page,
 };
@@ -32,7 +34,9 @@ pub fn run() {
             load_pdf_study_session,
             render_pdf_page,
             extract_pdf_page_text,
-            extract_pdf_page_ocr
+            extract_pdf_page_ocr,
+            speak_text_locally,
+            stop_local_speech
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

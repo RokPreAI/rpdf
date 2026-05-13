@@ -11,11 +11,13 @@ use crate::contracts::dto::{
     ReadingReliabilityStateDto,
     SaveCanvasProjectRequestDto,
     SavePdfStudySessionRequestDto,
+    SpeakTextRequestDto,
     RenderPdfPageRequestDto,
     RenderPdfPageResponseDto,
 };
 use crate::domain::canvas::CanvasDocument;
 use crate::domain::pdf::PdfStudyDocument;
+use crate::infrastructure::local_tts;
 use crate::infrastructure::pdf_engine::{PdfEngineAdapter, PdfiumEngineAdapter};
 
 pub struct AppServices {
@@ -138,6 +140,17 @@ impl AppServices {
         request: &ExtractPdfTextRequestDto,
     ) -> Result<PageTextExtractionDto, String> {
         self.pdf_engine.extract_page_text_with_ocr(request)
+    }
+
+    pub fn speak_text_locally(
+        &self,
+        request: &SpeakTextRequestDto,
+    ) -> Result<(), String> {
+        local_tts::speak_text(request)
+    }
+
+    pub fn stop_local_speech(&self) -> Result<(), String> {
+        local_tts::stop_speaking()
     }
 }
 

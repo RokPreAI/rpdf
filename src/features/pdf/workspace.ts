@@ -40,6 +40,7 @@ type PdfWorkspaceState = {
   readingStatus: string;
   isOcrRunning: boolean;
   isSpeaking: boolean;
+  activeSpeechBackend: "native" | "browser" | null;
   recolor: PdfRecolorSettingsDocument;
 };
 
@@ -174,6 +175,7 @@ export function mountPdfWorkspace(
     readingStatus: "Reading is local and page-scoped. Weak extraction does not imply reliable follow-along.",
     isOcrRunning: false,
     isSpeaking: false,
+    activeSpeechBackend: null,
     recolor: readPdfPreferences().recolor,
   };
 
@@ -218,6 +220,7 @@ export function mountPdfWorkspace(
   let currentStroke: AnnotationStroke | null = null;
   let documentId: string = crypto.randomUUID();
   let speechRate = readSpeechRatePreference();
+  let activeSpeechRequestId = 0;
 
   function getCurrentPageStrokes() {
     const strokes = annotationsByPage.get(state.pageIndex);
@@ -359,16 +362,23 @@ export function mountPdfWorkspace(
     };
   }
 
+  function speechAvailabilityMessage() {
+    return "No local speech backend is available in this runtime for Read page.";
+  }
+
   function stopSpeaking() {
-    if (!("speechSynthesis" in window)) {
-      state.isSpeaking = false;
-      state.readingStatus = "Speech synthesis is unavailable in this runtime.";
-      renderReadingPanel();
-      return;
+    activeSpeechRequestId += 1;
+
+    if (state.activeSpeechBackend === "native") {
+      void invoke("stop_local_speech").catch((error) => {
+        console.error("Could not stop native speech:", error);
+      });
+    } else if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
     }
 
-    window.speechSynthesis.cancel();
     state.isSpeaking = false;
+    state.activeSpeechBackend = null;
     state.readingStatus = "Reading stopped.";
     renderReadingPanel();
   }
@@ -426,7 +436,59 @@ export function mountPdfWorkspace(
     recolorBackgroundInput.value = state.recolor.background;
   }
 
-  function speakCurrentPage() {
+  function startBrowserSpeech(
+    text: string,
+    extraction: PageTextExtraction,
+    requestId: number,
+  ) {
+    if (!("speechSynthesis" in window)) {
+      state.isSpeaking = false;
+      state.activeSpeechBackend = null;
+      state.readingStatus = speechAvailabilityMessage();
+      renderReadingPanel();
+      return false;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = speechRate;
+    utterance.onstart = () => {
+      if (requestId !== activeSpeechRequestId) {
+        return;
+      }
+
+      state.isSpeaking = true;
+      state.activeSpeechBackend = "browser";
+      state.readingStatus = extraction.reliability === "native_reliable" || extraction.reliability === "ocr_reliable"
+        ? `Reading ${extraction.sourceKind} text aloud in the webview.`
+        : `Reading ${extraction.sourceKind} text aloud in the webview with weak reliability.`;
+      renderReadingPanel();
+    };
+    utterance.onend = () => {
+      if (requestId !== activeSpeechRequestId) {
+        return;
+      }
+
+      state.isSpeaking = false;
+      state.activeSpeechBackend = null;
+      state.readingStatus = "Reading finished.";
+      renderReadingPanel();
+    };
+    utterance.onerror = () => {
+      if (requestId !== activeSpeechRequestId) {
+        return;
+      }
+
+      state.isSpeaking = false;
+      state.activeSpeechBackend = null;
+      state.readingStatus = "Speech synthesis failed for the current page.";
+      renderReadingPanel();
+    };
+    window.speechSynthesis.speak(utterance);
+    return true;
+  }
+
+  async function speakCurrentPage() {
     const text = currentReadableText();
     const extraction = activeExtraction();
 
@@ -436,33 +498,46 @@ export function mountPdfWorkspace(
       return;
     }
 
-    if (!("speechSynthesis" in window)) {
-      state.readingStatus = "Speech synthesis is unavailable in this runtime.";
-      renderReadingPanel();
-      return;
-    }
+    stopSpeaking();
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = speechRate;
-    utterance.onstart = () => {
-      state.isSpeaking = true;
-      state.readingStatus = extraction.reliability === "native_reliable" || extraction.reliability === "ocr_reliable"
-        ? `Reading ${extraction.sourceKind} text aloud.`
-        : `Reading ${extraction.sourceKind} text aloud with weak reliability.`;
-      renderReadingPanel();
-    };
-    utterance.onend = () => {
+    const requestId = ++activeSpeechRequestId;
+    state.isSpeaking = true;
+    state.activeSpeechBackend = "native";
+    state.readingStatus = "Starting local speech for the current page.";
+    renderReadingPanel();
+
+    try {
+      await invoke("speak_text_locally", {
+        request: {
+          text,
+          rate: speechRate,
+        },
+      });
+
+      if (requestId !== activeSpeechRequestId) {
+        return;
+      }
+
       state.isSpeaking = false;
+      state.activeSpeechBackend = null;
       state.readingStatus = "Reading finished.";
       renderReadingPanel();
-    };
-    utterance.onerror = () => {
-      state.isSpeaking = false;
-      state.readingStatus = "Speech synthesis failed for the current page.";
+      return;
+    } catch (error) {
+      console.error("Native local speech failed:", error);
+
+      if (requestId !== activeSpeechRequestId) {
+        return;
+      }
+    }
+
+    state.readingStatus = "Native local speech was unavailable. Falling back to webview speech if possible.";
+    renderReadingPanel();
+
+    if (!startBrowserSpeech(text, extraction, requestId)) {
+      state.readingStatus = speechAvailabilityMessage();
       renderReadingPanel();
-    };
-    window.speechSynthesis.speak(utterance);
+    }
   }
 
   function hexToRgb(hexColor: string) {
@@ -824,7 +899,7 @@ export function mountPdfWorkspace(
     movePage(1);
   });
   readButton.addEventListener("click", () => {
-    speakCurrentPage();
+    void speakCurrentPage();
   });
   stopButton.addEventListener("click", () => {
     stopSpeaking();

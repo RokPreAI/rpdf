@@ -107,6 +107,13 @@ pub struct ExtractPdfTextRequestDto {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SpeakTextRequestDto {
+    pub text: String,
+    pub rate: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TextSpanDto {
     pub text: String,
     pub x: f32,
