@@ -302,27 +302,16 @@ button {
   pointer-events: none;
 }
 
-.canvas-settings {
+.stroke-width-control {
   position: absolute;
   left: 12px;
   top: 12px;
   display: grid;
-  gap: 10px;
+  gap: 6px;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--bg-panel);
   color: white;
-}
-
-.stroke-width-control {
-  display: grid;
-  gap: 6px;
-  font-size: 12px;
-}
-
-.shape-kind-control {
-  display: grid;
-  gap: 6px;
   font-size: 12px;
 }
 
@@ -330,47 +319,8 @@ button {
   width: 180px;
 }
 
-.shape-kind-control select {
-  border: 1px solid rgba(192, 202, 245, 0.16);
-  border-radius: var(--medium-radius);
-  background: rgba(12, 14, 20, 0.8);
-  color: var(--fg);
-  padding: 8px 10px;
-}
-
 .stroke-width-control output {
   color: var(--fg-dark);
-}
-
-.canvas-export-panel {
-  display: grid;
-  gap: 8px;
-}
-
-.canvas-export-panel button {
-  border: 1px solid rgba(122, 162, 247, 0.5);
-  border-radius: var(--medium-radius);
-  background: rgba(122, 162, 247, 0.16);
-  color: var(--fg);
-  padding: 8px 10px;
-  cursor: pointer;
-}
-
-.canvas-export-panel button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.canvas-export-panel button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.svg-export-status {
-  max-width: 220px;
-  color: var(--fg-dark);
-  font-size: 0.78rem;
-  line-height: 1.4;
 }
 
 .canvas-pickers {

@@ -100,7 +100,7 @@ type SelectionTarget =
     index: number;
   };
 
-type Tool = "pen" | "shape" | "select" | "pan" | "eraser";
+type Tool = "pen" | "rectangle" | "ellipse" | "line" | "select" | "pan" | "eraser";
 type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
 
@@ -113,31 +113,17 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         Left drag: draw/select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
       </div>
 
-      <div class="canvas-settings">
-        <label class="stroke-width-control" for="stroke-width">
-          <span>Stroke width</span>
-          <input id="stroke-width" type="range" min="1" max="24" step="1" value="3" />
-          <output id="stroke-width-value">3px</output>
-        </label>
-
-        <label class="shape-kind-control" for="shape-kind">
-          <span>Shape</span>
-          <select id="shape-kind">
-            <option value="rectangle">Rectangle</option>
-            <option value="ellipse">Ellipse</option>
-            <option value="line">Line</option>
-          </select>
-        </label>
-
-        <div class="canvas-export-panel">
-          <button id="svg-export-button" type="button">Export SVG</button>
-          <div id="svg-export-status" class="svg-export-status"></div>
-        </div>
-      </div>
+      <label class="stroke-width-control" for="stroke-width">
+        <span>Stroke width</span>
+        <input id="stroke-width" type="range" min="1" max="24" step="1" value="3" />
+        <output id="stroke-width-value">3px</output>
+      </label>
 
       <div class="canvas-pickers">
         <button class="tool-picker active" data-tool="pen" type="button" title="Pen" aria-label="Pen">✎</button>
-        <button class="tool-picker" data-tool="shape" type="button" title="Shape" aria-label="Shape">▭</button>
+        <button class="tool-picker" data-tool="rectangle" type="button" title="Rectangle" aria-label="Rectangle">▭</button>
+        <button class="tool-picker" data-tool="ellipse" type="button" title="Ellipse" aria-label="Ellipse">◯</button>
+        <button class="tool-picker" data-tool="line" type="button" title="Line" aria-label="Line">／</button>
         <button class="tool-picker" data-tool="select" type="button" title="Select" aria-label="Select">⌖</button>
         <button class="tool-picker" data-tool="pan" type="button" title="Pan" aria-label="Pan">✥</button>
         <button class="tool-picker" data-tool="eraser" type="button" title="Eraser" aria-label="Eraser">⌫</button>
@@ -203,6 +189,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     "color-picker-magenta": "--magenta",
     "color-picker-purple": "--purple",
   };
+
+  function isShapeTool(tool: Tool) {
+    return tool === "rectangle" || tool === "ellipse" || tool === "line";
+  }
 
   function readCssVariable(name: string) {
     return getComputedStyle(document.documentElement)
@@ -277,7 +267,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return;
     }
 
-    if (selectedTool === "pen" || selectedTool === "shape") {
+    if (selectedTool === "pen" || isShapeTool(selectedTool)) {
       canvas.style.cursor = "crosshair";
     } else if (selectedTool === "select") {
       canvas.style.cursor = selectedItem ? "move" : "default";
@@ -299,8 +289,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
     const strokeWidthInput = requireElement<HTMLInputElement>(container, "#stroke-width");
     const strokeWidthValue = requireElement<HTMLOutputElement>(container, "#stroke-width-value");
-    const shapeKindSelect = requireElement<HTMLSelectElement>(container, "#shape-kind");
-    const svgExportButton = requireElement<HTMLButtonElement>(container, "#svg-export-button");
 
     for (const button of colorButtons) {
       button.addEventListener("pointerdown", (event) => {
@@ -339,17 +327,19 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
         const tool = button.dataset.tool;
 
-        if (tool !== "pen" && tool !== "shape" && tool !== "select" && tool !== "pan" && tool !== "eraser") {
+        if (tool !== "pen" && tool !== "rectangle" && tool !== "ellipse" && tool !== "line" && tool !== "select" && tool !== "pan" && tool !== "eraser") {
           return;
         }
 
         selectedTool = tool;
+        if (isShapeTool(tool)) {
+          selectedShapeKind = tool;
+        }
         setActiveToolButton(toolButtons, selectedTool);
         updateCursor();
       });
     }
 
-    shapeKindSelect.value = selectedShapeKind;
     strokeWidthInput.value = String(baseStrokeWidth);
     strokeWidthValue.textContent = `${baseStrokeWidth}px`;
     setActiveToolButton(toolButtons, selectedTool);
@@ -360,17 +350,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       strokeWidthValue.textContent = `${baseStrokeWidth}px`;
     });
 
-    shapeKindSelect.addEventListener("change", () => {
-      if (shapeKindSelect.value !== "rectangle" && shapeKindSelect.value !== "ellipse" && shapeKindSelect.value !== "line") {
-        return;
-      }
-
-      selectedShapeKind = shapeKindSelect.value;
-    });
-
-    svgExportButton.addEventListener("click", () => {
-      exportSvg();
-    });
   }
 
   function resizeCanvas() {
@@ -719,12 +698,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function updateSvgExportState() {
-    const svgExportButton = requireElement<HTMLButtonElement>(container, "#svg-export-button");
-    const svgExportStatus = requireElement<HTMLElement>(container, "#svg-export-status");
     const exportState = currentSvgExportState();
-
-    svgExportButton.disabled = !exportState.eligible;
-    svgExportStatus.textContent = exportState.message;
+    window.dispatchEvent(new CustomEvent("rpdf:canvas-svg-export-state", {
+      detail: exportState,
+    }));
   }
 
   function redraw() {
@@ -1579,7 +1556,8 @@ ${items}
       return;
     }
 
-    if (selectedTool === "shape") {
+    if (isShapeTool(selectedTool)) {
+      selectedShapeKind = selectedTool;
       currentShape = createShape(point);
       canvas.setPointerCapture(event.pointerId);
       redraw();
@@ -1628,7 +1606,7 @@ ${items}
       return;
     }
 
-    if (selectedTool === "shape" && currentShape) {
+    if (isShapeTool(selectedTool) && currentShape) {
       currentShape.end = { ...point };
       redraw();
       return;
@@ -1741,6 +1719,7 @@ ${items}
   window.addEventListener("resize", resizeCanvas);
   window.addEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
   window.addEventListener("rpdf:canvas-import-pdf-page", onPdfPageImport as EventListener);
+  window.addEventListener("rpdf:request-canvas-svg-export", exportSvg as EventListener);
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", onPointerUp);
@@ -1767,10 +1746,11 @@ ${items}
 
     if (event.detail.defaultShapeKind === "rectangle" || event.detail.defaultShapeKind === "ellipse" || event.detail.defaultShapeKind === "line") {
       selectedShapeKind = event.detail.defaultShapeKind;
-      const shapeKindSelect = container.querySelector<HTMLSelectElement>("#shape-kind");
-
-      if (shapeKindSelect) {
-        shapeKindSelect.value = selectedShapeKind;
+      if (selectedTool !== "pen" && selectedTool !== "select" && selectedTool !== "pan" && selectedTool !== "eraser") {
+        selectedTool = selectedShapeKind;
+        const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
+        setActiveToolButton(toolButtons, selectedTool);
+        updateCursor();
       }
     }
 
@@ -1968,6 +1948,7 @@ ${items}
       window.removeEventListener("resize", resizeCanvas);
       window.removeEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
       window.removeEventListener("rpdf:canvas-import-pdf-page", onPdfPageImport as EventListener);
+      window.removeEventListener("rpdf:request-canvas-svg-export", exportSvg as EventListener);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);

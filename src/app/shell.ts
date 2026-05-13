@@ -59,6 +59,7 @@ export function mountAppShell(root: HTMLElement) {
             <div class="project-action-row">
               <button id="project-save-button" class="project-action-button" type="button"><span class="button-icon" aria-hidden="true">💾</span><span>Save</span></button>
               <button id="project-load-button" class="project-action-button secondary" type="button"><span class="button-icon" aria-hidden="true">📂</span><span>Load</span></button>
+              <button id="canvas-export-svg-button" class="project-action-button secondary" type="button" hidden><span class="button-icon" aria-hidden="true">⬒</span><span>Export SVG</span></button>
             </div>
             <div class="project-action-row recovery-row">
               <button id="autosave-restore-button" class="project-action-button recovery-missing" type="button">Restore autosave</button>
@@ -80,6 +81,7 @@ export function mountAppShell(root: HTMLElement) {
   const projectPathInput = requireElement<HTMLInputElement>(root, "#project-path-input");
   const saveButton = requireElement<HTMLButtonElement>(root, "#project-save-button");
   const loadButton = requireElement<HTMLButtonElement>(root, "#project-load-button");
+  const canvasExportSvgButton = requireElement<HTMLButtonElement>(root, "#canvas-export-svg-button");
   const autosaveRestoreButton = requireElement<HTMLButtonElement>(root, "#autosave-restore-button");
   const autosaveClearButton = requireElement<HTMLButtonElement>(root, "#autosave-clear-button");
   const modeButtons = root.querySelectorAll<HTMLButtonElement>(".mode-button");
@@ -117,6 +119,16 @@ export function mountAppShell(root: HTMLElement) {
     canvas: "rpdf.autosave.canvas",
     pdf: "rpdf.autosave.pdf",
   };
+
+  function renderCanvasExportButton(mode: AppMode) {
+    const isCanvasMode = mode === "canvas";
+    canvasExportSvgButton.hidden = !isCanvasMode;
+
+    if (!isCanvasMode) {
+      canvasExportSvgButton.disabled = true;
+      canvasExportSvgButton.title = "";
+    }
+  }
 
   function persistActiveModeState() {
     if (!activeWorkspace) {
@@ -157,6 +169,7 @@ export function mountAppShell(root: HTMLElement) {
     modeCopy.textContent = modeMetadata[mode].copy;
     projectPathInput.placeholder = modeFileHints[mode].placeholder;
     projectPathInput.value = modeProjectPaths[mode];
+    renderCanvasExportButton(mode);
 
     activeWorkspace?.destroy();
     activeWorkspace = null;
@@ -367,6 +380,10 @@ export function mountAppShell(root: HTMLElement) {
     });
   });
 
+  canvasExportSvgButton.addEventListener("click", () => {
+    window.dispatchEvent(new CustomEvent("rpdf:request-canvas-svg-export"));
+  });
+
   autosaveRestoreButton.addEventListener("click", () => {
     restoreAutosave().catch((error) => {
       backendStatus.textContent = `Recovery failed: ${String(error)}`;
@@ -381,6 +398,20 @@ export function mountAppShell(root: HTMLElement) {
   projectPathInput.addEventListener("input", () => {
     modeProjectPaths[state.snapshot.mode] = projectPathInput.value;
   });
+
+  window.addEventListener("rpdf:canvas-svg-export-state", ((event) => {
+    const customEvent = event as CustomEvent<{
+      eligible: boolean;
+      message: string;
+    }>;
+
+    if (state.snapshot.mode !== "canvas") {
+      return;
+    }
+
+    canvasExportSvgButton.disabled = !customEvent.detail.eligible;
+    canvasExportSvgButton.title = customEvent.detail.message;
+  }) as EventListener);
 
   state.subscribe(({ mode }) => {
     void renderMode(mode);
