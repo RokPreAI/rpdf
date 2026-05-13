@@ -105,18 +105,26 @@ export function mountPdfWorkspace(
 
         <div class="pdf-card pdf-sidebar-card">
           <div class="pdf-kicker">Recolor and import</div>
-          <label class="settings-field settings-checkbox">
-            <input id="pdf-recolor-enabled" type="checkbox" />
+          <label class="pdf-recolor-toggle">
             <span>Enable recolor for the current page</span>
+            <input id="pdf-recolor-enabled" type="checkbox" />
           </label>
-          <div class="settings-color-row">
-            <label class="settings-field">
+          <div id="pdf-recolor-controls" class="pdf-recolor-controls">
+            <label class="pdf-recolor-field">
               <span>Foreground</span>
-              <input id="pdf-recolor-foreground" type="color" />
+              <div class="pdf-recolor-input-shell">
+                <input id="pdf-recolor-foreground" type="color" />
+                <span id="pdf-recolor-foreground-swatch" class="pdf-recolor-swatch" aria-hidden="true"></span>
+                <code id="pdf-recolor-foreground-value" class="pdf-recolor-value">#c0caf5</code>
+              </div>
             </label>
-            <label class="settings-field">
+            <label class="pdf-recolor-field">
               <span>Background</span>
-              <input id="pdf-recolor-background" type="color" />
+              <div class="pdf-recolor-input-shell">
+                <input id="pdf-recolor-background" type="color" />
+                <span id="pdf-recolor-background-swatch" class="pdf-recolor-swatch" aria-hidden="true"></span>
+                <code id="pdf-recolor-background-value" class="pdf-recolor-value">#1a1b26</code>
+              </div>
             </label>
           </div>
           <div class="pdf-action-row">
@@ -197,8 +205,13 @@ export function mountPdfWorkspace(
   const readingStatus = requireElement<HTMLElement>(container, "#pdf-reading-status");
   const textPreview = requireElement<HTMLElement>(container, "#pdf-text-preview");
   const recolorEnabledInput = requireElement<HTMLInputElement>(container, "#pdf-recolor-enabled");
+  const recolorControls = requireElement<HTMLElement>(container, "#pdf-recolor-controls");
   const recolorForegroundInput = requireElement<HTMLInputElement>(container, "#pdf-recolor-foreground");
   const recolorBackgroundInput = requireElement<HTMLInputElement>(container, "#pdf-recolor-background");
+  const recolorForegroundSwatch = requireElement<HTMLElement>(container, "#pdf-recolor-foreground-swatch");
+  const recolorBackgroundSwatch = requireElement<HTMLElement>(container, "#pdf-recolor-background-swatch");
+  const recolorForegroundValue = requireElement<HTMLElement>(container, "#pdf-recolor-foreground-value");
+  const recolorBackgroundValue = requireElement<HTMLElement>(container, "#pdf-recolor-background-value");
   const documentTitle = requireElement<HTMLElement>(container, "#pdf-document-title");
   const backendName = requireElement<HTMLElement>(container, "#pdf-backend-name");
   const pageCountCopy = requireElement<HTMLElement>(container, "#pdf-page-count-copy");
@@ -474,6 +487,11 @@ export function mountPdfWorkspace(
     recolorEnabledInput.checked = state.recolor.enabled;
     recolorForegroundInput.value = state.recolor.foreground;
     recolorBackgroundInput.value = state.recolor.background;
+    recolorForegroundSwatch.style.backgroundColor = state.recolor.foreground;
+    recolorBackgroundSwatch.style.backgroundColor = state.recolor.background;
+    recolorForegroundValue.textContent = state.recolor.foreground.toLowerCase();
+    recolorBackgroundValue.textContent = state.recolor.background.toLowerCase();
+    recolorControls.classList.toggle("disabled", !state.recolor.enabled);
   }
 
   function startBrowserSpeech(

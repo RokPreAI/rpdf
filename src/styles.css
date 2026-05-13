@@ -225,37 +225,6 @@ button {
   justify-content: flex-end;
 }
 
-.settings-field {
-  display: grid;
-  gap: 6px;
-  font-size: 0.78rem;
-  color: var(--fg-dark);
-  min-width: 140px;
-}
-
-.settings-field input,
-.settings-field select {
-  border: 1px solid rgba(192, 202, 245, 0.16);
-  border-radius: var(--medium-radius);
-  background: rgba(12, 14, 20, 0.8);
-  color: var(--fg);
-  padding: 8px 10px;
-}
-
-.settings-checkbox {
-  grid-template-columns: auto minmax(180px, 1fr);
-  align-items: center;
-  min-width: 260px;
-}
-
-.settings-color-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
 .recovery-row {
   margin-left: auto;
 }
@@ -519,6 +488,80 @@ button {
 }
 
 .pdf-note-list code {
+  color: var(--fg);
+}
+
+.pdf-recolor-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 0.84rem;
+  color: var(--fg-dark);
+}
+
+.pdf-recolor-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--blue);
+}
+
+.pdf-recolor-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+
+.pdf-recolor-controls.disabled {
+  opacity: 0.65;
+}
+
+.pdf-recolor-field {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.pdf-recolor-field span {
+  font-size: 0.8rem;
+  color: var(--fg-dark);
+}
+
+.pdf-recolor-input-shell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(192, 202, 245, 0.16);
+  border-radius: var(--medium-radius);
+  background: rgba(12, 14, 20, 0.8);
+  padding: 8px 10px;
+}
+
+.pdf-recolor-input-shell input[type="color"] {
+  width: 32px;
+  height: 32px;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pdf-recolor-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(12, 14, 20, 0.3);
+  flex: 0 0 auto;
+}
+
+.pdf-recolor-value {
+  margin-left: auto;
+  font-size: 0.76rem;
   color: var(--fg);
 }
 

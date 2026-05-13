@@ -2,14 +2,11 @@
 
 ## Current TODOs
 
-- [x] 1 Canvas fix-select-tool
-- [x] 1 PDF contain-pdf-within-viewport
 - [ ] 1 PDF fix-pdf-mode-annotations
-- [ ] 2 Canvas add-input-polling-rate-setting
 - [ ] 2 Canvas add-element-resize
+- [ ] 2 Canvas add-input-polling-rate-setting
 - [ ] 2 Export harden-svg-export-and-save-path
 - [ ] 2 PDF add-recent-pdf-quick-open-list
-- [ ] 2 UX fix-recolor-controls-layout-and-state
 - [ ] 2 UX harden-responsive-layout-under-window-resize
 - [ ] 3 UX add-excalidraw-style-tool-and-color-shortcuts
 
@@ -21,11 +18,14 @@
 - [x] 1 App split-main-into-shell-and-modes
 - [x] 1 Canvas add-tablet-pressure-and-stroke-width
 - [x] 1 Canvas fix-select-tool
+- [x] 1 Canvas fix-select-tool
+- [x] 1 PDF contain-pdf-within-viewport
 - [x] 1 PDF contain-pdf-within-viewport
 - [x] 1 Reading fix-read-page-action
 - [x] 2 Reading add-tts-and-reliability-pipeline
-- [x] 3 PDF add-pdf-page-import-and-recolor
+- [x] 2 UX fix-recolor-controls-layout-and-state
 - [x] 3 Canvas add-draw-shapes
+- [x] 3 PDF add-pdf-page-import-and-recolor
 - [x] 3 UX add-config-and-toolbar-icons
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
@@ -481,7 +481,7 @@ Notes:
 
 Priority: 1
 Area: PDF
-Status: current
+Status: done
 Depends on: build-pdf-mode-shell
 
 Goal:
