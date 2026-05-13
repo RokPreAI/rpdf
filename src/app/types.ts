@@ -34,6 +34,7 @@ export type CanvasPointDocument = {
 };
 
 export type CanvasStrokeDocument = {
+  id?: string;
   color: string;
   width: number;
   order?: number;
@@ -87,6 +88,11 @@ export type CanvasDocument = {
   shapes: CanvasShapeDocument[];
   images: CanvasImagePlacementDocument[];
   pdfPages: CanvasPdfPagePlacementDocument[];
+};
+
+export type CanvasSelectionDocument = {
+  kind: "stroke" | "shape" | "image" | "pdf_page";
+  id: string;
 };
 
 export type OpenPdfDocumentRequest = {
@@ -188,6 +194,7 @@ export type WorkspaceDocumentSnapshot =
   | {
     kind: "canvas";
     document: CanvasDocument;
+    selection?: CanvasSelectionDocument | null;
   }
   | {
     kind: "pdf";

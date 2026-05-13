@@ -30,6 +30,8 @@ pub enum BackgroundPattern {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CanvasStroke {
+    #[serde(default)]
+    pub id: Option<String>,
     pub color: String,
     pub width: f32,
     #[serde(default)]

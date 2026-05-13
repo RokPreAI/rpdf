@@ -5,6 +5,7 @@ import type {
   CanvasDocument,
   CanvasImagePlacementDocument,
   CanvasPdfPagePlacementDocument,
+  CanvasSelectionDocument,
   PdfRecolorSettingsDocument,
   CanvasShapeDocument,
   CanvasShapeKindDocument,
@@ -727,6 +728,8 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function redraw() {
+    normalizeSelection();
+    updateCursor();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = backgroundColor;
@@ -778,21 +781,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     if (shape.kind === "rectangle") {
       const bounds = shapeBounds(shape);
-      const insideBounds = point.x >= bounds.minX - tolerance
+      return point.x >= bounds.minX - tolerance
         && point.x <= bounds.maxX + tolerance
         && point.y >= bounds.minY - tolerance
         && point.y <= bounds.maxY + tolerance;
-
-      if (!insideBounds) {
-        return false;
-      }
-
-      const nearLeftOrRight = Math.abs(point.x - bounds.minX) <= tolerance || Math.abs(point.x - bounds.maxX) <= tolerance;
-      const nearTopOrBottom = Math.abs(point.y - bounds.minY) <= tolerance || Math.abs(point.y - bounds.maxY) <= tolerance;
-      const betweenVerticalEdges = point.y >= bounds.minY - tolerance && point.y <= bounds.maxY + tolerance;
-      const betweenHorizontalEdges = point.x >= bounds.minX - tolerance && point.x <= bounds.maxX + tolerance;
-
-      return (nearLeftOrRight && betweenVerticalEdges) || (nearTopOrBottom && betweenHorizontalEdges);
     }
 
     const centerX = (shape.start.x + shape.end.x) / 2;
@@ -801,12 +793,25 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     const radiusY = Math.max(0.5, Math.abs(shape.end.y - shape.start.y) / 2);
     const outerDistance = (((point.x - centerX) / (radiusX + tolerance)) ** 2)
       + (((point.y - centerY) / (radiusY + tolerance)) ** 2);
-    const innerDistance = radiusX <= tolerance || radiusY <= tolerance
-      ? 0
-      : (((point.x - centerX) / Math.max(0.5, radiusX - tolerance)) ** 2)
-      + (((point.y - centerY) / Math.max(0.5, radiusY - tolerance)) ** 2);
+    return outerDistance <= 1.15;
+  }
 
-    return outerDistance <= 1.15 && innerDistance >= 0.85;
+  function strokeContainsPoint(stroke: Stroke, point: Point, tolerance: number) {
+    if (stroke.points.length === 0) {
+      return false;
+    }
+
+    if (stroke.points.length === 1) {
+      return distanceBetweenPoints(point, stroke.points[0]) <= tolerance;
+    }
+
+    for (let index = 1; index < stroke.points.length; index += 1) {
+      if (pointToSegmentDistance(point, stroke.points[index - 1], stroke.points[index]) <= tolerance) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   function eraseAtPoint(point: Point) {
@@ -982,8 +987,80 @@ ${items}
     URL.revokeObjectURL(downloadUrl);
   }
 
-  function orderedShapeIndices() {
-    return [...shapes.keys()].sort((firstIndex, secondIndex) => shapes[secondIndex].order - shapes[firstIndex].order);
+  function orderedVectorSelectionTargets() {
+    return [...strokes, ...shapes]
+      .sort((firstItem, secondItem) => secondItem.order - firstItem.order)
+      .map((vectorItem) => ("points" in vectorItem
+        ? {
+          kind: "stroke" as const,
+          index: strokes.findIndex((stroke) => stroke.id === vectorItem.id),
+        }
+        : {
+          kind: "shape" as const,
+          index: shapes.findIndex((shape) => shape.id === vectorItem.id),
+        }))
+      .filter((target) => target.index >= 0);
+  }
+
+  function selectedItemId(target: SelectionTarget): string | null {
+    if (target.kind === "image") {
+      return images[target.index]?.id ?? null;
+    }
+
+    if (target.kind === "pdf_page") {
+      return pdfPages[target.index]?.id ?? null;
+    }
+
+    if (target.kind === "shape") {
+      return shapes[target.index]?.id ?? null;
+    }
+
+    return strokes[target.index]?.id ?? null;
+  }
+
+  function currentSelectionSnapshot(): CanvasSelectionDocument | null {
+    if (!selectedItem) {
+      return null;
+    }
+
+    const id = selectedItemId(selectedItem);
+
+    if (!id) {
+      return null;
+    }
+
+    return {
+      kind: selectedItem.kind,
+      id,
+    };
+  }
+
+  function resolveSelection(selection: CanvasSelectionDocument | null | undefined): SelectionTarget | null {
+    if (!selection) {
+      return null;
+    }
+
+    if (selection.kind === "image") {
+      const index = images.findIndex((image) => image.id === selection.id);
+      return index >= 0 ? { kind: "image", index } : null;
+    }
+
+    if (selection.kind === "pdf_page") {
+      const index = pdfPages.findIndex((pdfPage) => pdfPage.id === selection.id);
+      return index >= 0 ? { kind: "pdf_page", index } : null;
+    }
+
+    if (selection.kind === "shape") {
+      const index = shapes.findIndex((shape) => shape.id === selection.id);
+      return index >= 0 ? { kind: "shape", index } : null;
+    }
+
+    const index = strokes.findIndex((stroke) => stroke.id === selection.id);
+    return index >= 0 ? { kind: "stroke", index } : null;
+  }
+
+  function normalizeSelection() {
+    selectedItem = resolveSelection(currentSelectionSnapshot());
   }
 
   function hitTestSelection(point: Point): SelectionTarget | null {
@@ -1019,39 +1096,45 @@ ${items}
       }
     }
 
-    for (const shapeIndex of orderedShapeIndices()) {
-      const tolerance = Math.max(shapes[shapeIndex].baseWidth * 1.5, 8 / camera.scale);
+    for (const target of orderedVectorSelectionTargets()) {
+      const vectorItem = target.kind === "shape"
+        ? shapes[target.index]
+        : strokes[target.index];
 
-      if (shapeContainsPoint(shapes[shapeIndex], point, tolerance)) {
-        return {
-          kind: "shape",
-          index: shapeIndex,
-        };
+      if (!vectorItem) {
+        continue;
       }
-    }
 
-    for (let strokeIndex = strokes.length - 1; strokeIndex >= 0; strokeIndex -= 1) {
-      const stroke = strokes[strokeIndex];
-      const bounds = getStrokeBounds(stroke);
+      const bounds = vectorItemBounds(vectorItem);
 
       if (!bounds) {
         continue;
       }
 
-      const withinBounds = point.x >= bounds.x
-        && point.x <= bounds.x + bounds.width
-        && point.y >= bounds.y
-        && point.y <= bounds.y + bounds.height;
+      const withinBounds = point.x >= bounds.minX
+        && point.x <= bounds.maxX
+        && point.y >= bounds.minY
+        && point.y <= bounds.maxY;
 
       if (!withinBounds) {
         continue;
       }
 
-      if (stroke.points.some((strokePoint) => distanceBetweenPoints(point, strokePoint) <= stroke.baseWidth * 2)) {
-        return {
-          kind: "stroke",
-          index: strokeIndex,
-        };
+      const tolerance = Math.max(vectorItem.baseWidth * 1.5, 8 / camera.scale);
+
+      if (target.kind === "shape") {
+        const shape = vectorItem as Shape;
+
+        if (shapeContainsPoint(shape, point, tolerance)) {
+          return target;
+        }
+        continue;
+      }
+
+      const stroke = vectorItem as Stroke;
+
+      if (strokeContainsPoint(stroke, point, tolerance)) {
+        return target;
       }
     }
 
@@ -1436,11 +1519,13 @@ ${items}
 
     if (lastStroke && (!lastShape || lastStroke.order > lastShape.order)) {
       strokes.pop();
+      normalizeSelection();
       return;
     }
 
     if (lastShape) {
       shapes.pop();
+      normalizeSelection();
     }
   }
 
@@ -1783,6 +1868,7 @@ ${items}
         id: documentId,
         backgroundPattern: toCanvasBackgroundPattern(backgroundPattern),
         strokes: strokes.map((stroke) => ({
+          id: stroke.id,
           color: stroke.color,
           width: stroke.baseWidth,
           order: stroke.order,
@@ -1817,6 +1903,7 @@ ${items}
       return {
         kind: "canvas",
         document,
+        selection: currentSelectionSnapshot(),
       };
     },
     async importDocument(snapshot) {
@@ -1833,7 +1920,7 @@ ${items}
 
       strokes.push(
         ...snapshot.document.strokes.map((stroke, index) => ({
-          id: crypto.randomUUID(),
+          id: stroke.id ?? crypto.randomUUID(),
           color: stroke.color,
           baseWidth: stroke.width,
           order: stroke.order ?? index + 1,
@@ -1871,6 +1958,7 @@ ${items}
 
       await importImages(snapshot.document.images);
       await importPdfPages(snapshot.document.pdfPages ?? []);
+      selectedItem = resolveSelection(snapshot.selection);
       redraw();
     },
     destroy() {

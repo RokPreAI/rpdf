@@ -2,7 +2,7 @@
 
 ## Current TODOs
 
-- [ ] 1 Canvas fix-select-tool
+- [x] 1 Canvas fix-select-tool
 - [x] 1 PDF contain-pdf-within-viewport
 - [ ] 1 PDF fix-pdf-mode-annotations
 - [ ] 2 Canvas add-input-polling-rate-setting
@@ -20,6 +20,7 @@
 - [x] 1 App preserve-mode-state-across-switches
 - [x] 1 App split-main-into-shell-and-modes
 - [x] 1 Canvas add-tablet-pressure-and-stroke-width
+- [x] 1 Canvas fix-select-tool
 - [x] 1 PDF contain-pdf-within-viewport
 - [x] 1 Reading fix-read-page-action
 - [x] 2 Reading add-tts-and-reliability-pipeline
@@ -422,7 +423,7 @@ Notes:
 
 Priority: 1
 Area: Canvas
-Status: current
+Status: done
 Depends on: add-selection-and-move-tools, add-draw-shapes, add-pdf-page-import-and-recolor
 
 Goal:
