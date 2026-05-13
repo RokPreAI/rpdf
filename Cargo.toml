@@ -1,0 +1,15 @@
+[package]
+name = "rpdf"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "rpdf"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rpdf"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.31"

@@ -23,6 +23,7 @@ use app::services::AppServices;
 pub fn run() {
     tauri::Builder::default()
         .manage(AppServices::default())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_app_bootstrap,

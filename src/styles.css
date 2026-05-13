@@ -111,7 +111,8 @@ button {
 .workspace-header {
   display: flex;
   justify-content: space-between;
-  align-items: start;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: var(--medium-gap);
   padding: var(--medium-gap) var(--large-gap);
   border-bottom: 1px solid rgba(192, 202, 245, 0.08);
@@ -136,16 +137,20 @@ button {
 }
 
 .header-actions {
-  min-width: min(420px, 100%);
-  display: grid;
+  min-width: min(620px, 100%);
+  flex: 1 1 620px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
   gap: 8px;
-  justify-items: end;
 }
 
 .project-path-field {
-  width: min(420px, 100%);
+  width: min(320px, 100%);
   display: grid;
   gap: 6px;
+  flex: 1 1 280px;
 }
 
 .project-path-field span {
@@ -165,6 +170,7 @@ button {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .project-action-button {
@@ -184,10 +190,21 @@ button {
   background: rgba(192, 202, 245, 0.06);
 }
 
-.autosave-status {
-  font-size: 0.78rem;
-  color: var(--fg-dark);
-  text-align: right;
+.project-action-button.recovery-ready {
+  border-color: rgba(158, 206, 106, 0.55);
+  background: rgba(158, 206, 106, 0.18);
+  color: var(--green);
+}
+
+.project-action-button.recovery-missing {
+  border-color: rgba(247, 118, 142, 0.55);
+  background: rgba(247, 118, 142, 0.14);
+  color: var(--red);
+}
+
+.project-action-button.recovery-missing:disabled {
+  opacity: 1;
+  cursor: default;
 }
 
 .button-icon {
@@ -196,12 +213,16 @@ button {
 }
 
 .settings-panel {
-  display: grid;
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 12px;
   padding: 12px;
   border: 1px solid rgba(192, 202, 245, 0.08);
   border-radius: var(--medium-radius);
   background: rgba(12, 14, 20, 0.56);
+  width: 100%;
+  justify-content: flex-end;
 }
 
 .settings-field {
@@ -209,6 +230,7 @@ button {
   gap: 6px;
   font-size: 0.78rem;
   color: var(--fg-dark);
+  min-width: 140px;
 }
 
 .settings-field input,
@@ -221,14 +243,25 @@ button {
 }
 
 .settings-checkbox {
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(180px, 1fr);
   align-items: center;
+  min-width: 260px;
 }
 
 .settings-color-row {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.recovery-row {
+  margin-left: auto;
+}
+
+.backend-status {
+  width: 100%;
 }
 
 .workspace-root {
@@ -673,7 +706,6 @@ button {
     width: 100%;
   }
 
-  .autosave-status,
   .backend-status {
     text-align: left;
   }
@@ -686,5 +718,16 @@ button {
 
   .pdf-viewer-meta {
     text-align: left;
+  }
+
+  .header-actions {
+    min-width: 100%;
+    flex-basis: 100%;
+    justify-content: stretch;
+  }
+
+  .project-path-field,
+  .backend-status {
+    width: 100%;
   }
 }

@@ -30,55 +30,6 @@ type PendingPdfPageImport = {
   };
 };
 
-type AppPreferences = {
-  defaultStrokeWidth: number;
-  defaultShapeKind: "rectangle" | "ellipse" | "line";
-  defaultCanvasColor: string;
-  speechRate: number;
-  recolorEnabled: boolean;
-  recolorForeground: string;
-  recolorBackground: string;
-};
-
-const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
-
-function defaultPreferences(): AppPreferences {
-  return {
-    defaultStrokeWidth: 3,
-    defaultShapeKind: "rectangle",
-    defaultCanvasColor: "#c0caf5",
-    speechRate: 1,
-    recolorEnabled: false,
-    recolorForeground: "#c0caf5",
-    recolorBackground: "#1a1b26",
-  };
-}
-
-function readPreferences() {
-  const rawValue = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
-
-  if (!rawValue) {
-    return defaultPreferences();
-  }
-
-  try {
-    return {
-      ...defaultPreferences(),
-      ...(JSON.parse(rawValue) as Partial<AppPreferences>),
-    };
-  } catch (error) {
-    console.error("Could not parse app preferences:", error);
-    return defaultPreferences();
-  }
-}
-
-function writePreferences(preferences: AppPreferences) {
-  window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
-  window.dispatchEvent(new CustomEvent("rpdf:preferences-changed", {
-    detail: preferences,
-  }));
-}
-
 export function mountAppShell(root: HTMLElement) {
   const state = new AppStateStore();
 
@@ -103,55 +54,16 @@ export function mountAppShell(root: HTMLElement) {
 
           <div class="header-actions">
             <label class="project-path-field">
-              <span id="project-path-label">Canvas file path</span>
               <input id="project-path-input" type="text" placeholder="/tmp/canvas-project.rpdf.json" />
             </label>
             <div class="project-action-row">
               <button id="project-save-button" class="project-action-button" type="button"><span class="button-icon" aria-hidden="true">💾</span><span>Save</span></button>
               <button id="project-load-button" class="project-action-button secondary" type="button"><span class="button-icon" aria-hidden="true">📂</span><span>Load</span></button>
-              <button id="settings-toggle-button" class="project-action-button secondary" type="button"><span class="button-icon" aria-hidden="true">⚙</span><span>Settings</span></button>
             </div>
-            <section id="settings-panel" class="settings-panel" hidden>
-              <label class="settings-field">
-                <span>Default stroke width</span>
-                <input id="settings-stroke-width" type="range" min="1" max="24" step="1" />
-              </label>
-              <label class="settings-field">
-                <span>Default shape</span>
-                <select id="settings-shape-kind">
-                  <option value="rectangle">Rectangle</option>
-                  <option value="ellipse">Ellipse</option>
-                  <option value="line">Line</option>
-                </select>
-              </label>
-              <label class="settings-field">
-                <span>Default pen color</span>
-                <input id="settings-canvas-color" type="color" />
-              </label>
-              <label class="settings-field">
-                <span>Speech rate</span>
-                <input id="settings-speech-rate" type="range" min="0.6" max="1.6" step="0.1" />
-              </label>
-              <label class="settings-field settings-checkbox">
-                <input id="settings-recolor-enabled" type="checkbox" />
-                <span>Enable recolor defaults for future PDF imports</span>
-              </label>
-              <div class="settings-color-row">
-                <label class="settings-field">
-                  <span>Recolor foreground</span>
-                  <input id="settings-recolor-foreground" type="color" />
-                </label>
-                <label class="settings-field">
-                  <span>Recolor background</span>
-                  <input id="settings-recolor-background" type="color" />
-                </label>
-              </div>
-            </section>
             <div class="project-action-row recovery-row">
-              <button id="autosave-restore-button" class="project-action-button secondary" type="button" hidden>Restore autosave</button>
+              <button id="autosave-restore-button" class="project-action-button recovery-missing" type="button">Restore autosave</button>
               <button id="autosave-clear-button" class="project-action-button secondary" type="button" hidden>Clear recovery</button>
             </div>
-            <div id="autosave-status" class="autosave-status">Autosave idle</div>
             <div id="backend-status" class="backend-status">Loading backend status...</div>
           </div>
         </header>
@@ -165,27 +77,21 @@ export function mountAppShell(root: HTMLElement) {
   const modeTitle = requireElement<HTMLElement>(root, "#mode-title");
   const modeCopy = requireElement<HTMLElement>(root, "#mode-copy");
   const backendStatus = requireElement<HTMLElement>(root, "#backend-status");
-  const projectPathLabel = requireElement<HTMLElement>(root, "#project-path-label");
   const projectPathInput = requireElement<HTMLInputElement>(root, "#project-path-input");
   const saveButton = requireElement<HTMLButtonElement>(root, "#project-save-button");
   const loadButton = requireElement<HTMLButtonElement>(root, "#project-load-button");
-  const settingsToggleButton = requireElement<HTMLButtonElement>(root, "#settings-toggle-button");
-  const settingsPanel = requireElement<HTMLElement>(root, "#settings-panel");
-  const settingsStrokeWidth = requireElement<HTMLInputElement>(root, "#settings-stroke-width");
-  const settingsShapeKind = requireElement<HTMLSelectElement>(root, "#settings-shape-kind");
-  const settingsCanvasColor = requireElement<HTMLInputElement>(root, "#settings-canvas-color");
-  const settingsSpeechRate = requireElement<HTMLInputElement>(root, "#settings-speech-rate");
-  const settingsRecolorEnabled = requireElement<HTMLInputElement>(root, "#settings-recolor-enabled");
-  const settingsRecolorForeground = requireElement<HTMLInputElement>(root, "#settings-recolor-foreground");
-  const settingsRecolorBackground = requireElement<HTMLInputElement>(root, "#settings-recolor-background");
   const autosaveRestoreButton = requireElement<HTMLButtonElement>(root, "#autosave-restore-button");
   const autosaveClearButton = requireElement<HTMLButtonElement>(root, "#autosave-clear-button");
-  const autosaveStatus = requireElement<HTMLElement>(root, "#autosave-status");
   const modeButtons = root.querySelectorAll<HTMLButtonElement>(".mode-button");
 
   let activeWorkspace: WorkspaceController | null = null;
   let bootstrap: AppBootstrap | null = null;
-  let preferences = readPreferences();
+  const modeWorkspaceSnapshots: Partial<Record<AppMode, WorkspaceDocumentSnapshot>> = {};
+  const modeProjectPaths: Record<AppMode, string> = {
+    canvas: "",
+    pdf: "",
+  };
+  let renderRequestId = 0;
 
   const modeMetadata: Record<AppMode, { title: string; copy: string }> = {
     canvas: {
@@ -198,13 +104,11 @@ export function mountAppShell(root: HTMLElement) {
     },
   };
 
-  const modeFileHints: Record<AppMode, { label: string; placeholder: string }> = {
+  const modeFileHints: Record<AppMode, { placeholder: string }> = {
     canvas: {
-      label: "Canvas file path",
       placeholder: "/tmp/canvas-project.rpdf.json",
     },
     pdf: {
-      label: "PDF session path",
       placeholder: "/tmp/pdf-study-session.rpdf.json",
     },
   };
@@ -214,25 +118,45 @@ export function mountAppShell(root: HTMLElement) {
     pdf: "rpdf.autosave.pdf",
   };
 
-  function syncSettingsPanel() {
-    settingsStrokeWidth.value = String(preferences.defaultStrokeWidth);
-    settingsShapeKind.value = preferences.defaultShapeKind;
-    settingsCanvasColor.value = preferences.defaultCanvasColor;
-    settingsSpeechRate.value = String(preferences.speechRate);
-    settingsRecolorEnabled.checked = preferences.recolorEnabled;
-    settingsRecolorForeground.value = preferences.recolorForeground;
-    settingsRecolorBackground.value = preferences.recolorBackground;
+  function persistActiveModeState() {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    const currentSnapshot = activeWorkspace.exportDocument();
+    modeWorkspaceSnapshots[currentSnapshot.kind] = currentSnapshot;
+    modeProjectPaths[currentSnapshot.kind] = projectPathInput.value;
   }
 
-  function renderMode(mode: AppMode) {
+  async function restoreModeState(mode: AppMode, requestId: number) {
+    const snapshot = modeWorkspaceSnapshots[mode];
+
+    if (!activeWorkspace || !snapshot || snapshot.kind !== mode) {
+      return;
+    }
+
+    await activeWorkspace.importDocument(snapshot);
+
+    if (requestId !== renderRequestId) {
+      return;
+    }
+
+    backendStatus.textContent = `Restored ${mode} workspace state after mode switch`;
+  }
+
+  async function renderMode(mode: AppMode) {
+    const requestId = ++renderRequestId;
+
+    persistActiveModeState();
+
     for (const button of modeButtons) {
       button.classList.toggle("active", button.dataset.mode === mode);
     }
 
     modeTitle.textContent = modeMetadata[mode].title;
     modeCopy.textContent = modeMetadata[mode].copy;
-    projectPathLabel.textContent = modeFileHints[mode].label;
     projectPathInput.placeholder = modeFileHints[mode].placeholder;
+    projectPathInput.value = modeProjectPaths[mode];
 
     activeWorkspace?.destroy();
     activeWorkspace = null;
@@ -241,11 +165,13 @@ export function mountAppShell(root: HTMLElement) {
     if (mode === "canvas") {
       activeWorkspace = mountCanvasWorkspace(workspaceRoot);
       renderAutosaveRecoveryState(mode);
+      await restoreModeState(mode, requestId);
       return;
     }
 
     activeWorkspace = mountPdfWorkspace(workspaceRoot, bootstrap);
     renderAutosaveRecoveryState(mode);
+    await restoreModeState(mode, requestId);
   }
 
   function autosaveKey(mode: AppMode) {
@@ -272,11 +198,13 @@ export function mountAppShell(root: HTMLElement) {
     const record = readAutosave(mode);
     const hasRecovery = Boolean(record);
 
-    autosaveRestoreButton.hidden = !hasRecovery;
     autosaveClearButton.hidden = !hasRecovery;
-    autosaveStatus.textContent = hasRecovery
+    autosaveRestoreButton.disabled = !hasRecovery;
+    autosaveRestoreButton.classList.toggle("recovery-ready", hasRecovery);
+    autosaveRestoreButton.classList.toggle("recovery-missing", !hasRecovery);
+    autosaveRestoreButton.title = hasRecovery
       ? `Recovery available from ${record?.savedAt ?? "unknown time"}`
-      : "Autosave idle";
+      : "No autosave available";
   }
 
   function writeAutosaveSnapshot() {
@@ -309,11 +237,12 @@ export function mountAppShell(root: HTMLElement) {
     const record = readAutosave(mode);
 
     if (!record) {
-      autosaveStatus.textContent = "No recovery snapshot found";
+      backendStatus.textContent = "No recovery snapshot found";
       return;
     }
 
     await activeWorkspace.importDocument(record.snapshot);
+    modeWorkspaceSnapshots[mode] = record.snapshot;
     backendStatus.textContent = `Restored ${mode} autosave from ${record.savedAt}`;
     renderAutosaveRecoveryState(mode);
   }
@@ -332,6 +261,8 @@ export function mountAppShell(root: HTMLElement) {
     }
 
     const snapshot = activeWorkspace.exportDocument();
+    modeWorkspaceSnapshots[snapshot.kind] = snapshot;
+    modeProjectPaths[snapshot.kind] = filePath;
 
     if (snapshot.kind === "canvas") {
       await invoke("save_canvas_project", {
@@ -372,10 +303,13 @@ export function mountAppShell(root: HTMLElement) {
           filePath,
         },
       });
-      await activeWorkspace.importDocument({
+      const snapshot: WorkspaceDocumentSnapshot = {
         kind: "canvas",
         document,
-      });
+      };
+      await activeWorkspace.importDocument(snapshot);
+      modeWorkspaceSnapshots.canvas = snapshot;
+      modeProjectPaths.canvas = filePath;
       backendStatus.textContent = `Loaded canvas document from ${filePath}`;
       renderAutosaveRecoveryState("canvas");
       return;
@@ -386,10 +320,13 @@ export function mountAppShell(root: HTMLElement) {
         filePath,
       },
     });
-    await activeWorkspace.importDocument({
+    const snapshot: WorkspaceDocumentSnapshot = {
       kind: "pdf",
       document,
-    });
+    };
+    await activeWorkspace.importDocument(snapshot);
+    modeWorkspaceSnapshots.pdf = snapshot;
+    modeProjectPaths.pdf = filePath;
     backendStatus.textContent = `Loaded PDF session from ${filePath}`;
     renderAutosaveRecoveryState("pdf");
   }
@@ -441,8 +378,12 @@ export function mountAppShell(root: HTMLElement) {
     backendStatus.textContent = `Cleared ${state.snapshot.mode} recovery snapshot`;
   });
 
+  projectPathInput.addEventListener("input", () => {
+    modeProjectPaths[state.snapshot.mode] = projectPathInput.value;
+  });
+
   state.subscribe(({ mode }) => {
-    renderMode(mode);
+    void renderMode(mode);
   });
 
   window.addEventListener("rpdf:request-pdf-page-import", (event) => {
@@ -462,75 +403,11 @@ export function mountAppShell(root: HTMLElement) {
     dispatchImport();
   });
 
-  settingsToggleButton.addEventListener("click", () => {
-    settingsPanel.hidden = !settingsPanel.hidden;
-  });
-
-  settingsStrokeWidth.addEventListener("input", () => {
-    preferences = {
-      ...preferences,
-      defaultStrokeWidth: Number(settingsStrokeWidth.value),
-    };
-    writePreferences(preferences);
-  });
-
-  settingsShapeKind.addEventListener("change", () => {
-    if (settingsShapeKind.value !== "rectangle" && settingsShapeKind.value !== "ellipse" && settingsShapeKind.value !== "line") {
-      return;
-    }
-
-    preferences = {
-      ...preferences,
-      defaultShapeKind: settingsShapeKind.value,
-    };
-    writePreferences(preferences);
-  });
-
-  settingsCanvasColor.addEventListener("input", () => {
-    preferences = {
-      ...preferences,
-      defaultCanvasColor: settingsCanvasColor.value,
-    };
-    writePreferences(preferences);
-  });
-
-  settingsSpeechRate.addEventListener("input", () => {
-    preferences = {
-      ...preferences,
-      speechRate: Number(settingsSpeechRate.value),
-    };
-    writePreferences(preferences);
-  });
-
-  settingsRecolorEnabled.addEventListener("change", () => {
-    preferences = {
-      ...preferences,
-      recolorEnabled: settingsRecolorEnabled.checked,
-    };
-    writePreferences(preferences);
-  });
-
-  settingsRecolorForeground.addEventListener("input", () => {
-    preferences = {
-      ...preferences,
-      recolorForeground: settingsRecolorForeground.value,
-    };
-    writePreferences(preferences);
-  });
-
-  settingsRecolorBackground.addEventListener("input", () => {
-    preferences = {
-      ...preferences,
-      recolorBackground: settingsRecolorBackground.value,
-    };
-    writePreferences(preferences);
-  });
-
   window.setInterval(() => {
     try {
       writeAutosaveSnapshot();
     } catch (error) {
-      autosaveStatus.textContent = `Autosave failed: ${String(error)}`;
+      backendStatus.textContent = `Autosave failed: ${String(error)}`;
     }
   }, 5000);
 
@@ -552,8 +429,6 @@ export function mountAppShell(root: HTMLElement) {
       backendStatus.textContent = "Backend bootstrap failed";
       backendStatus.title = String(error);
     });
-
-  syncSettingsPanel();
 }
 
 function requireElement<T extends Element>(root: ParentNode, selector: string) {

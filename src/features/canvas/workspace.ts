@@ -1,3 +1,5 @@
+import { readImage } from "@tauri-apps/plugin-clipboard-manager";
+
 import type {
   CanvasBackgroundPattern,
   CanvasDocument,
@@ -108,9 +110,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
       <div class="canvas-toolbar">
         Left drag: draw/select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
-        <div id="selected-tool"></div>
-        <div id="selected-shape-kind"></div>
-        <div id="selected-color"></div>
       </div>
 
       <div class="canvas-settings">
@@ -288,30 +287,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
   }
 
-  function updateToolIndicator(tool: Tool) {
-    const toolIndicator = container.querySelector<HTMLElement>("#selected-tool");
-
-    if (toolIndicator) {
-      toolIndicator.textContent = tool;
-    }
-  }
-
-  function updateShapeKindIndicator(shapeKind: ShapeKind) {
-    const shapeIndicator = container.querySelector<HTMLElement>("#selected-shape-kind");
-
-    if (shapeIndicator) {
-      shapeIndicator.textContent = selectedTool === "shape" ? shapeKind : "";
-    }
-  }
-
-  function updateColorIndicator(color: string) {
-    const colorIndicator = container.querySelector<HTMLElement>("#selected-color");
-
-    if (colorIndicator) {
-      colorIndicator.textContent = color;
-    }
-  }
-
   function setActiveToolButton(toolButtons: NodeListOf<HTMLButtonElement>, tool: Tool) {
     for (const button of toolButtons) {
       button.classList.toggle("active", button.dataset.tool === tool);
@@ -343,9 +318,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         strokeColor = readCssVariable(cssVariable);
         selectedTool = "pen";
 
-        updateColorIndicator(strokeColor);
-        updateToolIndicator(selectedTool);
-        updateShapeKindIndicator(selectedShapeKind);
         setActiveToolButton(toolButtons, selectedTool);
 
         for (const colorButton of colorButtons) {
@@ -371,8 +343,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         }
 
         selectedTool = tool;
-        updateToolIndicator(selectedTool);
-        updateShapeKindIndicator(selectedShapeKind);
         setActiveToolButton(toolButtons, selectedTool);
         updateCursor();
       });
@@ -381,9 +351,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     shapeKindSelect.value = selectedShapeKind;
     strokeWidthInput.value = String(baseStrokeWidth);
     strokeWidthValue.textContent = `${baseStrokeWidth}px`;
-    updateToolIndicator(selectedTool);
-    updateShapeKindIndicator(selectedShapeKind);
-    updateColorIndicator(strokeColor);
     setActiveToolButton(toolButtons, selectedTool);
     updateCursor();
 
@@ -398,7 +365,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       }
 
       selectedShapeKind = shapeKindSelect.value;
-      updateShapeKindIndicator(selectedShapeKind);
     });
 
     svgExportButton.addEventListener("click", () => {
@@ -1290,6 +1256,147 @@ ${items}
     return null;
   }
 
+  async function importImageFromTauriClipboard() {
+    try {
+      console.log("[canvas paste] Attempting native Tauri clipboard image read.");
+      const clipboardImage = await readImage();
+      const [{ width, height }, rgba] = await Promise.all([
+        clipboardImage.size(),
+        clipboardImage.rgba(),
+      ]);
+
+      console.log("[canvas paste] Native clipboard image size:", {
+        width,
+        height,
+        bytes: rgba.length,
+      });
+
+      const imageCanvas = document.createElement("canvas");
+      imageCanvas.width = width;
+      imageCanvas.height = height;
+      const imageContext = imageCanvas.getContext("2d");
+
+      if (!imageContext) {
+        throw new Error("Could not get 2D context for native clipboard image.");
+      }
+
+      imageContext.putImageData(
+        new ImageData(new Uint8ClampedArray(rgba), width, height),
+        0,
+        0,
+      );
+
+      const source = imageCanvas.toDataURL("image/png");
+      const image = await loadImageFromSource(source);
+      addLoadedImage(image, crypto.randomUUID(), source);
+      console.log("[canvas paste] Imported image from native Tauri clipboard.");
+      return true;
+    } catch (error) {
+      console.error("[canvas paste] Native Tauri clipboard image read failed:", error);
+      return false;
+    }
+  }
+
+  async function importImageFromClipboardApi() {
+    const importedFromTauriClipboard = await importImageFromTauriClipboard();
+
+    if (importedFromTauriClipboard) {
+      return true;
+    }
+
+    if (!navigator.clipboard?.read) {
+      console.log("[canvas paste] Clipboard API read is unavailable in this runtime.");
+      return false;
+    }
+
+    try {
+      console.log("[canvas paste] Attempting navigator.clipboard.read() fallback.");
+      const clipboardItems = await navigator.clipboard.read();
+      console.log("[canvas paste] navigator.clipboard.read() returned items:", clipboardItems.length);
+
+      for (const [index, clipboardItem] of clipboardItems.entries()) {
+        console.log("[canvas paste] Clipboard item", index, "types:", clipboardItem.types);
+        const imageMimeType = clipboardItem.types.find((type) => type.startsWith("image/"));
+
+        if (!imageMimeType) {
+          continue;
+        }
+
+        console.log("[canvas paste] Found image MIME type from Clipboard API:", imageMimeType);
+        const blob = await clipboardItem.getType(imageMimeType);
+        console.log("[canvas paste] Clipboard API blob size:", blob.size, "type:", blob.type);
+        const file = new File([blob], `clipboard-image.${imageMimeType.split("/")[1] || "png"}`, {
+          type: imageMimeType,
+        });
+
+        await addImageFromFile(file);
+        console.log("[canvas paste] Imported image from Clipboard API fallback.");
+        return true;
+      }
+    } catch (error) {
+      console.error("Clipboard API image read failed:", error);
+    }
+
+    return false;
+  }
+
+  function tryImportFromClipboardData(clipboardData: DataTransfer | null) {
+    if (!clipboardData) {
+      console.log("[canvas paste] No clipboardData on paste event.");
+      return false;
+    }
+
+    console.log("[canvas paste] clipboardData item count:", clipboardData.items.length);
+    console.log("[canvas paste] clipboardData types:", Array.from(clipboardData.types));
+
+    for (const item of clipboardData.items) {
+      console.log("[canvas paste] clipboardData item type:", item.type, "kind:", item.kind);
+      if (!item.type.startsWith("image/")) {
+        continue;
+      }
+
+      const file = item.getAsFile();
+
+      if (!file) {
+        console.log("[canvas paste] Image item existed but getAsFile() returned null.");
+        continue;
+      }
+
+      console.log("[canvas paste] Importing image file from paste event:", {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+      });
+      void addImageFromFile(file);
+      return true;
+    }
+
+    const html = clipboardData.getData("text/html");
+    console.log("[canvas paste] HTML payload length:", html.length);
+
+    if (html) {
+      const imageSource = getImageSourceFromHtml(html);
+      console.log("[canvas paste] Parsed image source from HTML:", imageSource);
+
+      if (imageSource) {
+        addImageFromSource(imageSource);
+        return true;
+      }
+    }
+
+    const text = clipboardData.getData("text/plain");
+    console.log("[canvas paste] Plain text payload preview:", text.slice(0, 200));
+
+    if (text && looksLikeImageSource(text.trim())) {
+      console.log("[canvas paste] Plain text looked like an image source.");
+      addImageFromSource(text.trim());
+      return true;
+    }
+
+    console.log("[canvas paste] No importable image found in paste event payload.");
+    return false;
+  }
+
   function createStroke(point: Point, pressure: number) {
     const stroke: Stroke = {
       id: crypto.randomUUID(),
@@ -1338,44 +1445,14 @@ ${items}
   }
 
   const onPaste = (event: ClipboardEvent) => {
-    const clipboardData = event.clipboardData;
+    console.log("[canvas paste] paste event received:", {
+      type: event.type,
+      targetTag: (event.target as HTMLElement | null)?.tagName ?? null,
+      hasClipboardData: Boolean(event.clipboardData),
+    });
 
-    if (!clipboardData) {
-      return;
-    }
-
-    for (const item of clipboardData.items) {
-      if (!item.type.startsWith("image/")) {
-        continue;
-      }
-
-      const file = item.getAsFile();
-
-      if (!file) {
-        continue;
-      }
-
-      addImageFromFile(file);
-      event.preventDefault();
-      return;
-    }
-
-    const html = clipboardData.getData("text/html");
-
-    if (html) {
-      const imageSource = getImageSourceFromHtml(html);
-
-      if (imageSource) {
-        addImageFromSource(imageSource);
-        event.preventDefault();
-        return;
-      }
-    }
-
-    const text = clipboardData.getData("text/plain");
-
-    if (text && looksLikeImageSource(text.trim())) {
-      addImageFromSource(text.trim());
+    if (tryImportFromClipboardData(event.clipboardData)) {
+      console.log("[canvas paste] Preventing default because import path matched paste payload.");
       event.preventDefault();
     }
   };
@@ -1544,6 +1621,16 @@ ${items}
       redraw();
     }
 
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+      console.log("[canvas paste] Keyboard paste shortcut detected. Trying native clipboard import.");
+      void importImageFromClipboardApi().then((imported) => {
+        console.log("[canvas paste] Clipboard import result:", imported);
+        if (imported) {
+          event.preventDefault();
+        }
+      });
+    }
+
     if (!event.ctrlKey && event.key.toLowerCase() === "c") {
       strokes.length = 0;
       shapes.length = 0;
@@ -1600,13 +1687,10 @@ ${items}
       if (shapeKindSelect) {
         shapeKindSelect.value = selectedShapeKind;
       }
-
-      updateShapeKindIndicator(selectedShapeKind);
     }
 
     if (typeof event.detail.defaultCanvasColor === "string") {
       strokeColor = event.detail.defaultCanvasColor;
-      updateColorIndicator(strokeColor);
     }
   }
 
