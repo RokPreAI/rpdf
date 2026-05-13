@@ -41,7 +41,7 @@ export type CanvasStrokeDocument = {
   points: CanvasPointDocument[];
 };
 
-export type CanvasShapeKindDocument = "line" | "rectangle" | "ellipse";
+export type CanvasShapeKindDocument = "line" | "arrow" | "rectangle" | "ellipse";
 
 export type CanvasShapeDocument = {
   id: string;

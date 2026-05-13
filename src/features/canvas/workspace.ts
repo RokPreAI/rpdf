@@ -100,7 +100,7 @@ type SelectionTarget =
     index: number;
   };
 
-type Tool = "pen" | "rectangle" | "ellipse" | "line" | "select" | "pan" | "eraser";
+type Tool = "pen" | "rectangle" | "ellipse" | "line" | "arrow" | "select" | "pan" | "eraser";
 type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
 
@@ -124,6 +124,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         <button class="tool-picker" data-tool="rectangle" type="button" title="Rectangle" aria-label="Rectangle">▭</button>
         <button class="tool-picker" data-tool="ellipse" type="button" title="Ellipse" aria-label="Ellipse">◯</button>
         <button class="tool-picker" data-tool="line" type="button" title="Line" aria-label="Line">／</button>
+        <button class="tool-picker" data-tool="arrow" type="button" title="Arrow" aria-label="Arrow">↗</button>
         <button class="tool-picker" data-tool="select" type="button" title="Select" aria-label="Select">⌖</button>
         <button class="tool-picker" data-tool="pan" type="button" title="Pan" aria-label="Pan">✥</button>
         <button class="tool-picker" data-tool="eraser" type="button" title="Eraser" aria-label="Eraser">⌫</button>
@@ -191,7 +192,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   };
 
   function isShapeTool(tool: Tool) {
-    return tool === "rectangle" || tool === "ellipse" || tool === "line";
+    return tool === "rectangle" || tool === "ellipse" || tool === "line" || tool === "arrow";
   }
 
   function readCssVariable(name: string) {
@@ -327,7 +328,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
         const tool = button.dataset.tool;
 
-        if (tool !== "pen" && tool !== "rectangle" && tool !== "ellipse" && tool !== "line" && tool !== "select" && tool !== "pan" && tool !== "eraser") {
+        if (tool !== "pen" && tool !== "rectangle" && tool !== "ellipse" && tool !== "line" && tool !== "arrow" && tool !== "select" && tool !== "pan" && tool !== "eraser") {
           return;
         }
 
@@ -488,10 +489,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function shapeBounds(shape: Shape) {
-    const minX = Math.min(shape.start.x, shape.end.x);
-    const minY = Math.min(shape.start.y, shape.end.y);
-    const maxX = Math.max(shape.start.x, shape.end.x);
-    const maxY = Math.max(shape.start.y, shape.end.y);
+    const relevantPoints = shape.kind === "arrow"
+      ? [shape.start, shape.end, ...arrowHeadPoints(shape)]
+      : [shape.start, shape.end];
+    const minX = Math.min(...relevantPoints.map((point) => point.x));
+    const minY = Math.min(...relevantPoints.map((point) => point.y));
+    const maxX = Math.max(...relevantPoints.map((point) => point.x));
+    const maxY = Math.max(...relevantPoints.map((point) => point.y));
     const padding = shape.baseWidth;
 
     return {
@@ -504,6 +508,36 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       maxX,
       maxY,
     };
+  }
+
+  function arrowHeadPoints(shape: Shape) {
+    const deltaX = shape.end.x - shape.start.x;
+    const deltaY = shape.end.y - shape.start.y;
+    const length = Math.hypot(deltaX, deltaY);
+
+    if (length === 0) {
+      return [shape.end, shape.end];
+    }
+
+    const unitX = deltaX / length;
+    const unitY = deltaY / length;
+    const headLength = Math.max(shape.baseWidth * 4, 18);
+    const headWidth = Math.max(shape.baseWidth * 2.4, 10);
+    const baseX = shape.end.x - unitX * headLength;
+    const baseY = shape.end.y - unitY * headLength;
+    const perpendicularX = -unitY;
+    const perpendicularY = unitX;
+
+    return [
+      {
+        x: baseX + perpendicularX * headWidth,
+        y: baseY + perpendicularY * headWidth,
+      },
+      {
+        x: baseX - perpendicularX * headWidth,
+        y: baseY - perpendicularY * headWidth,
+      },
+    ] satisfies [Point, Point];
   }
 
   function drawShape(shape: Shape) {
@@ -521,6 +555,15 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     if (shape.kind === "line") {
       ctx.moveTo(shape.start.x, shape.start.y);
       ctx.lineTo(shape.end.x, shape.end.y);
+    } else if (shape.kind === "arrow") {
+      const [leftHeadPoint, rightHeadPoint] = arrowHeadPoints(shape);
+
+      ctx.moveTo(shape.start.x, shape.start.y);
+      ctx.lineTo(shape.end.x, shape.end.y);
+      ctx.moveTo(shape.end.x, shape.end.y);
+      ctx.lineTo(leftHeadPoint.x, leftHeadPoint.y);
+      ctx.moveTo(shape.end.x, shape.end.y);
+      ctx.lineTo(rightHeadPoint.x, rightHeadPoint.y);
     } else if (shape.kind === "rectangle") {
       ctx.rect(
         bounds.minX,
@@ -756,6 +799,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return pointToSegmentDistance(point, shape.start, shape.end) <= tolerance;
     }
 
+    if (shape.kind === "arrow") {
+      const [leftHeadPoint, rightHeadPoint] = arrowHeadPoints(shape);
+      return pointToSegmentDistance(point, shape.start, shape.end) <= tolerance
+        || pointToSegmentDistance(point, shape.end, leftHeadPoint) <= tolerance
+        || pointToSegmentDistance(point, shape.end, rightHeadPoint) <= tolerance;
+    }
+
     if (shape.kind === "rectangle") {
       const bounds = shapeBounds(shape);
       return point.x >= bounds.minX - tolerance
@@ -881,6 +931,12 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   function createSvgShapeMarkup(shape: Shape, minX: number, minY: number) {
     if (shape.kind === "line") {
       return `<line x1="${shape.start.x - minX}" y1="${shape.start.y - minY}" x2="${shape.end.x - minX}" y2="${shape.end.y - minY}" stroke="${escapeXml(shape.color)}" stroke-width="${shape.baseWidth}" stroke-linecap="round" />`;
+    }
+
+    if (shape.kind === "arrow") {
+      const [leftHeadPoint, rightHeadPoint] = arrowHeadPoints(shape);
+
+      return `<path d="M ${shape.start.x - minX} ${shape.start.y - minY} L ${shape.end.x - minX} ${shape.end.y - minY} M ${shape.end.x - minX} ${shape.end.y - minY} L ${leftHeadPoint.x - minX} ${leftHeadPoint.y - minY} M ${shape.end.x - minX} ${shape.end.y - minY} L ${rightHeadPoint.x - minX} ${rightHeadPoint.y - minY}" fill="none" stroke="${escapeXml(shape.color)}" stroke-width="${shape.baseWidth}" stroke-linecap="round" stroke-linejoin="round" />`;
     }
 
     if (shape.kind === "rectangle") {
@@ -1744,7 +1800,7 @@ ${items}
       }
     }
 
-    if (event.detail.defaultShapeKind === "rectangle" || event.detail.defaultShapeKind === "ellipse" || event.detail.defaultShapeKind === "line") {
+    if (event.detail.defaultShapeKind === "rectangle" || event.detail.defaultShapeKind === "ellipse" || event.detail.defaultShapeKind === "line" || event.detail.defaultShapeKind === "arrow") {
       selectedShapeKind = event.detail.defaultShapeKind;
       if (selectedTool !== "pen" && selectedTool !== "select" && selectedTool !== "pan" && selectedTool !== "eraser") {
         selectedTool = selectedShapeKind;

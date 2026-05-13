@@ -16,6 +16,7 @@
 - [x] 0 Storage versioned-project-and-session-model
 - [x] 1 App preserve-mode-state-across-switches
 - [x] 1 App split-main-into-shell-and-modes
+- [x] 2 Canvas add-arrow-tool
 - [x] 1 Canvas add-tablet-pressure-and-stroke-width
 - [x] 1 Canvas fix-select-tool
 - [x] 1 Canvas fix-select-tool
@@ -240,6 +241,36 @@ Acceptance criteria:
 Notes:
 
 - Keep the first version simple and reliable rather than feature-rich.
+
+### add-arrow-tool
+
+Priority: 2
+Area: Canvas
+Status: done
+Depends on: add-draw-shapes
+
+Goal:
+Add a dedicated arrow drawing tool in Canvas Mode using the existing vector-shape model.
+
+Context:
+The user explicitly requested an arrow tool. The canvas already supports line, rectangle, and ellipse tools, so arrow support belongs in the same shape pipeline instead of as a separate freehand feature.
+
+Expected changes:
+
+- add `arrow` as a supported canvas shape kind
+- add a direct arrow tool button in `.canvas-pickers`
+- render arrow shafts and arrowheads on canvas
+- keep selection, movement, persistence, and SVG export working for arrows
+
+Acceptance criteria:
+
+- Canvas Mode has a direct arrow tool button.
+- Arrows can be drawn, selected, moved, and reopened from saved canvas documents.
+- SVG export includes arrows instead of dropping them.
+
+Notes:
+
+- Keep this scoped to the arrow tool only; do not widen into resize handles or shortcuts here.
 
 ### add-tts-and-reliability-pipeline
 

@@ -43,6 +43,7 @@ pub struct CanvasStroke {
 #[serde(rename_all = "snake_case")]
 pub enum CanvasShapeKind {
     Line,
+    Arrow,
     Rectangle,
     Ellipse,
 }
