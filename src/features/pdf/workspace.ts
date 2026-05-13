@@ -222,6 +222,10 @@ export function mountPdfWorkspace(
   let speechRate = readSpeechRatePreference();
   let activeSpeechRequestId = 0;
 
+  pageImage.style.zIndex = "1";
+  annotationLayer.style.zIndex = "2";
+  annotationLayer.style.cursor = "crosshair";
+
   function getCurrentPageStrokes() {
     const strokes = annotationsByPage.get(state.pageIndex);
 
@@ -303,14 +307,50 @@ export function mountPdfWorkspace(
       : "No readable text was extracted for this page.";
   }
 
+  function currentAnnotationBounds() {
+    const stageRect = stage.getBoundingClientRect();
+
+    if (
+      pageImage.hidden
+      || pageImage.naturalWidth <= 0
+      || pageImage.naturalHeight <= 0
+      || stageRect.width <= 0
+      || stageRect.height <= 0
+    ) {
+      return {
+        width: stageRect.width,
+        height: stageRect.height,
+        offsetLeft: 0,
+        offsetTop: 0,
+      };
+    }
+
+    const scale = Math.min(
+      stageRect.width / pageImage.naturalWidth,
+      stageRect.height / pageImage.naturalHeight,
+    );
+    const width = pageImage.naturalWidth * scale;
+    const height = pageImage.naturalHeight * scale;
+
+    return {
+      width,
+      height,
+      offsetLeft: (stageRect.width - width) / 2,
+      offsetTop: (stageRect.height - height) / 2,
+    };
+  }
+
   function resizeAnnotationLayer() {
-    const rect = stage.getBoundingClientRect();
+    const bounds = currentAnnotationBounds();
     const scale = window.devicePixelRatio || 1;
 
-    annotationLayer.width = Math.max(1, Math.floor(rect.width * scale));
-    annotationLayer.height = Math.max(1, Math.floor(rect.height * scale));
-    annotationLayer.style.width = `${rect.width}px`;
-    annotationLayer.style.height = `${rect.height}px`;
+    annotationLayer.width = Math.max(1, Math.floor(bounds.width * scale));
+    annotationLayer.height = Math.max(1, Math.floor(bounds.height * scale));
+    annotationLayer.style.left = `${bounds.offsetLeft}px`;
+    annotationLayer.style.top = `${bounds.offsetTop}px`;
+    annotationLayer.style.width = `${bounds.width}px`;
+    annotationLayer.style.height = `${bounds.height}px`;
+    annotationLayer.hidden = !state.document || !state.pageRender;
 
     annotationContext.setTransform(scale, 0, 0, scale, 0, 0);
     redrawAnnotations();
@@ -642,6 +682,7 @@ export function mountPdfWorkspace(
       renderBackendNotes(state.backendStatus?.notes ?? bootstrap?.activePdfBackend.notes ?? []);
       renderReliability("unavailable", "Open a document to inspect native text extraction status for the current page.");
       pageImage.hidden = true;
+      annotationLayer.hidden = true;
       renderPlaceholder.hidden = false;
       renderPlaceholder.textContent = "The PDF page stage is ready, but no document is open yet.";
       resizeAnnotationLayer();
@@ -670,9 +711,11 @@ export function mountPdfWorkspace(
     if (state.pageRender) {
       pageImage.hidden = false;
       pageImage.src = state.pageImageDataUrl ?? `data:${state.pageRender.mimeType};base64,${state.pageRender.dataBase64}`;
+      annotationLayer.hidden = false;
       renderPlaceholder.hidden = true;
     } else {
       pageImage.hidden = true;
+      annotationLayer.hidden = true;
       renderPlaceholder.hidden = false;
       renderPlaceholder.textContent = state.pageError
         ?? "The PDF engine boundary is connected, but page rendering is not configured on this machine yet.";
@@ -947,6 +990,7 @@ export function mountPdfWorkspace(
   annotationLayer.addEventListener("pointermove", onPointerMove);
   annotationLayer.addEventListener("pointerup", onPointerUp);
   annotationLayer.addEventListener("pointercancel", onPointerUp);
+  pageImage.addEventListener("load", resizeAnnotationLayer);
   window.addEventListener("resize", resizeAnnotationLayer);
   window.addEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
 
@@ -1067,6 +1111,7 @@ export function mountPdfWorkspace(
       annotationLayer.removeEventListener("pointermove", onPointerMove);
       annotationLayer.removeEventListener("pointerup", onPointerUp);
       annotationLayer.removeEventListener("pointercancel", onPointerUp);
+      pageImage.removeEventListener("load", resizeAnnotationLayer);
       window.removeEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
       container.replaceChildren();
     },
