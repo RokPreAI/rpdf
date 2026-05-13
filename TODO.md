@@ -3,7 +3,6 @@
 ## Current TODOs
 
 - [ ] 1 PDF fix-pdf-mode-annotations
-- [ ] 2 Canvas add-element-resize
 - [ ] 2 Canvas add-input-polling-rate-setting
 - [ ] 2 Export harden-svg-export-and-save-path
 - [ ] 2 PDF add-recent-pdf-quick-open-list
@@ -17,6 +16,7 @@
 - [x] 1 App preserve-mode-state-across-switches
 - [x] 1 App split-main-into-shell-and-modes
 - [x] 2 Canvas add-arrow-tool
+- [x] 2 Canvas add-element-resize
 - [x] 1 Canvas add-tablet-pressure-and-stroke-width
 - [x] 1 Canvas fix-select-tool
 - [x] 1 Canvas fix-select-tool
@@ -599,7 +599,7 @@ Notes:
 
 Priority: 2
 Area: PDF
-Status: current
+Status: done
 Depends on: preserve-mode-state-across-switches, add-save-load-project-files, build-pdf-mode-shell
 
 Goal:
