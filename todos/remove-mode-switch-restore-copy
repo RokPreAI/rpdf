@@ -1,0 +1,26 @@
+Priority: 2
+Area: UX
+Status: current
+Depends on: preserve-mode-state-across-switches
+
+Goal:
+Remove the shell status message `Restored canvas workspace state after mode switch` and the equivalent PDF copy so mode changes stay visually quiet.
+
+Context:
+The user explicitly asked to get rid of this message. The underlying restore behavior is still desired; only the status-copy surface is unwanted noise.
+
+Expected changes:
+
+- remove or suppress the mode-switch restore status message
+- keep actual restore behavior intact
+- verify that real error or recovery messages still surface when needed
+
+Acceptance criteria:
+
+- Switching modes no longer emits the restore-status message in the shell.
+- Mode switching still preserves workspace state as before.
+- Real save/load/recovery failures are still visible.
+
+Notes:
+
+- Keep this a narrow copy-and-status-surface cleanup.

@@ -14,10 +14,67 @@ export type PdfBackendStatus = {
   notes: string[];
 };
 
+export type AppThemeConfig = {
+  bg: string;
+  bgDark: string;
+  bgDarker: string;
+  bgHighlight: string;
+  bgPanel: string;
+  fg: string;
+  fgDark: string;
+  fgGutter: string;
+  blue: string;
+  cyan: string;
+  green: string;
+  yellow: string;
+  orange: string;
+  red: string;
+  magenta: string;
+  purple: string;
+};
+
+export type AppToolShortcutsConfig = {
+  select: string;
+  pan: string;
+  pen: string;
+  rectangle: string;
+  ellipse: string;
+  line: string;
+  arrow: string;
+  eraser: string;
+};
+
+export type AppColorShortcutsConfig = {
+  fg: string;
+  blue: string;
+  cyan: string;
+  green: string;
+  yellow: string;
+  orange: string;
+  red: string;
+  magenta: string;
+  purple: string;
+};
+
+export type AppConfig = {
+  version: number;
+  theme: AppThemeConfig;
+  canvas: {
+    backgroundPattern: CanvasBackgroundPattern;
+  };
+  shortcuts: {
+    tools: AppToolShortcutsConfig;
+    colors: AppColorShortcutsConfig;
+  };
+};
+
 export type AppBootstrap = {
   supportedModes: AppMode[];
   activePdfBackend: PdfBackendStatus;
   reliabilityStates: ReadingReliabilityState[];
+  appConfig: AppConfig;
+  appConfigPath: string;
+  appConfigWarnings: string[];
 };
 
 export type DocumentVersion = {

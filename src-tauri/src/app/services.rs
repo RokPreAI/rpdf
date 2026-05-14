@@ -1,4 +1,5 @@
 use crate::contracts::dto::{
+    AppConfigDto,
     AppBootstrapDto,
     AppModeDto,
     ExtractPdfTextRequestDto,
@@ -35,6 +36,7 @@ impl Default for AppServices {
 
 impl AppServices {
     pub fn bootstrap(&self) -> AppBootstrapDto {
+        let (app_config, app_config_path, app_config_warnings) = load_or_initialize_app_config();
         AppBootstrapDto {
             supported_modes: vec![AppModeDto::Canvas, AppModeDto::Pdf],
             active_pdf_backend: self.pdf_engine.backend_status(),
@@ -45,6 +47,9 @@ impl AppServices {
                 ReadingReliabilityStateDto::OcrWeak,
                 ReadingReliabilityStateDto::Unavailable,
             ],
+            app_config,
+            app_config_path,
+            app_config_warnings,
         }
     }
 
@@ -231,6 +236,104 @@ fn default_svg_file_name(suggested_file_name: &str) -> String {
     }
 
     format!("{trimmed}.svg")
+}
+
+fn load_or_initialize_app_config() -> (AppConfigDto, String, Vec<String>) {
+    let default_config = AppConfigDto::default();
+    let mut warnings = Vec::new();
+    let config_path = match resolve_app_config_path() {
+        Ok(path) => path,
+        Err(error) => {
+            warnings.push(format!("Could not resolve app config path. Falling back to built-in defaults: {error}"));
+            return (default_config, "unavailable".to_string(), warnings);
+        }
+    };
+
+    let display_path = config_path.display().to_string();
+
+    if !config_path.exists() {
+        if let Some(parent) = config_path.parent() {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                warnings.push(format!(
+                    "Could not create app config directory for {}. Falling back to built-in defaults: {}",
+                    display_path, error
+                ));
+                return (default_config, display_path, warnings);
+            }
+        }
+
+        match serde_json::to_string_pretty(&default_config) {
+            Ok(serialized) => {
+                if let Err(error) = std::fs::write(&config_path, serialized) {
+                    warnings.push(format!(
+                        "Could not write default app config at {}. Falling back to built-in defaults: {}",
+                        display_path, error
+                    ));
+                }
+            }
+            Err(error) => {
+                warnings.push(format!(
+                    "Could not serialize default app config for {}. Falling back to built-in defaults: {}",
+                    display_path, error
+                ));
+            }
+        }
+
+        return (default_config, display_path, warnings);
+    }
+
+    let raw_value = match std::fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(error) => {
+            warnings.push(format!(
+                "Could not read app config at {}. Falling back to built-in defaults: {}",
+                display_path, error
+            ));
+            return (default_config, display_path, warnings);
+        }
+    };
+
+    match serde_json::from_str::<AppConfigDto>(&raw_value) {
+        Ok(parsed) => (parsed, display_path, warnings),
+        Err(error) => {
+            warnings.push(format!(
+                "Could not parse app config at {}. Falling back to built-in defaults: {}",
+                display_path, error
+            ));
+            (default_config, display_path, warnings)
+        }
+    }
+}
+
+fn resolve_app_config_path() -> Result<std::path::PathBuf, String> {
+    if let Some(value) = std::env::var_os("XDG_CONFIG_HOME") {
+        let trimmed = value.to_string_lossy().trim().to_string();
+
+        if !trimmed.is_empty() {
+            return Ok(std::path::PathBuf::from(trimmed).join("rpdf").join("config.json"));
+        }
+    }
+
+    if let Some(value) = std::env::var_os("HOME") {
+        let trimmed = value.to_string_lossy().trim().to_string();
+
+        if !trimmed.is_empty() {
+            return Ok(std::path::PathBuf::from(trimmed)
+                .join(".config")
+                .join("rpdf")
+                .join("config.json"));
+        }
+    }
+
+    if let Some(value) = std::env::var_os("APPDATA") {
+        let trimmed = value.to_string_lossy().trim().to_string();
+
+        if !trimmed.is_empty() {
+            return Ok(std::path::PathBuf::from(trimmed).join("rpdf").join("config.json"));
+        }
+    }
+
+    Err("Neither XDG_CONFIG_HOME, HOME, nor APPDATA were available.".to_string())
 }
 
 fn write_json_document<T>(file_path: &str, document: &T) -> Result<(), String>

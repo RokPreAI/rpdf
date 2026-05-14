@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { mountCanvasWorkspace } from "../features/canvas/workspace";
 import { mountPdfWorkspace } from "../features/pdf/workspace";
+import { setActiveAppConfig } from "./config";
 import { AppStateStore } from "./state";
 import type {
   AppBootstrap,
@@ -350,12 +351,21 @@ export function mountAppShell(root: HTMLElement) {
       return;
     }
 
-    const { activePdfBackend } = currentBootstrap;
+    const { activePdfBackend, appConfigPath, appConfigWarnings } = currentBootstrap;
     const summary = activePdfBackend.configured ? "ready" : "boundary only";
+    const configSummary = appConfigWarnings.length > 0 ? " | config fallback" : "";
 
     backendStatus.textContent =
-      `${activePdfBackend.backendName}: ${summary}`;
-    backendStatus.title = activePdfBackend.notes.join("\n");
+      `${activePdfBackend.backendName}: ${summary}${configSummary}`;
+    backendStatus.title = [
+      `Config: ${appConfigPath}`,
+      ...activePdfBackend.notes,
+      ...appConfigWarnings,
+    ].join("\n");
+
+    for (const warning of appConfigWarnings) {
+      console.warn("[app config]", warning);
+    }
   }
 
   for (const button of modeButtons) {
@@ -447,6 +457,7 @@ export function mountAppShell(root: HTMLElement) {
   invoke<AppBootstrap>("get_app_bootstrap")
     .then((result) => {
       bootstrap = result;
+      setActiveAppConfig(result.appConfig);
       renderBackendStatus(bootstrap);
 
       if (!bootstrap.supportedModes.includes(state.snapshot.mode)) {

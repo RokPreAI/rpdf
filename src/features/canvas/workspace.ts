@@ -1,6 +1,7 @@
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
 
+import { getActiveAppConfig, normalizedColorShortcutEntries, normalizedToolShortcutEntries } from "../../app/config";
 import type {
   CanvasBackgroundPattern,
   CanvasDocument,
@@ -145,12 +146,35 @@ type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
+  const appConfig = getActiveAppConfig();
+  const configuredToolShortcuts = appConfig?.shortcuts.tools ?? {
+    select: "v",
+    pan: "h",
+    pen: "p",
+    rectangle: "r",
+    ellipse: "o",
+    line: "l",
+    arrow: "a",
+    eraser: "e",
+  };
+  const configuredColorShortcuts = appConfig?.shortcuts.colors ?? {
+    fg: "1",
+    blue: "2",
+    cyan: "3",
+    green: "4",
+    yellow: "5",
+    orange: "6",
+    red: "7",
+    magenta: "8",
+    purple: "9",
+  };
+
   container.innerHTML = `
     <div class="canvas-workspace">
       <canvas class="canvas-surface"></canvas>
 
       <div class="canvas-toolbar">
-        Shortcuts: V select, H pan, P pen, R rectangle, O ellipse, L line, A arrow, E eraser, 1-9 colors | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo
+        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo
       </div>
 
       <div class="stroke-width-control">
@@ -167,24 +191,24 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       </div>
 
       <div class="canvas-pickers">
-        <button class="tool-picker active" data-tool="pen" type="button" title="Pen (P)" aria-label="Pen (P)">✎</button>
-        <button class="tool-picker" data-tool="rectangle" type="button" title="Rectangle (R)" aria-label="Rectangle (R)">▭</button>
-        <button class="tool-picker" data-tool="ellipse" type="button" title="Ellipse (O)" aria-label="Ellipse (O)">◯</button>
-        <button class="tool-picker" data-tool="line" type="button" title="Line (L)" aria-label="Line (L)">／</button>
-        <button class="tool-picker" data-tool="arrow" type="button" title="Arrow (A)" aria-label="Arrow (A)">↗</button>
-        <button class="tool-picker" data-tool="select" type="button" title="Select (V)" aria-label="Select (V)">⌖</button>
-        <button class="tool-picker" data-tool="pan" type="button" title="Pan (H or Space)" aria-label="Pan (H or Space)">✥</button>
-        <button class="tool-picker" data-tool="eraser" type="button" title="Eraser (E)" aria-label="Eraser (E)">⌫</button>
+        <button class="tool-picker active" data-tool="pen" type="button" title="Pen (${configuredToolShortcuts.pen.toUpperCase()})" aria-label="Pen (${configuredToolShortcuts.pen.toUpperCase()})">✎</button>
+        <button class="tool-picker" data-tool="rectangle" type="button" title="Rectangle (${configuredToolShortcuts.rectangle.toUpperCase()})" aria-label="Rectangle (${configuredToolShortcuts.rectangle.toUpperCase()})">▭</button>
+        <button class="tool-picker" data-tool="ellipse" type="button" title="Ellipse (${configuredToolShortcuts.ellipse.toUpperCase()})" aria-label="Ellipse (${configuredToolShortcuts.ellipse.toUpperCase()})">◯</button>
+        <button class="tool-picker" data-tool="line" type="button" title="Line (${configuredToolShortcuts.line.toUpperCase()})" aria-label="Line (${configuredToolShortcuts.line.toUpperCase()})">／</button>
+        <button class="tool-picker" data-tool="arrow" type="button" title="Arrow (${configuredToolShortcuts.arrow.toUpperCase()})" aria-label="Arrow (${configuredToolShortcuts.arrow.toUpperCase()})">↗</button>
+        <button class="tool-picker" data-tool="select" type="button" title="Select (${configuredToolShortcuts.select.toUpperCase()})" aria-label="Select (${configuredToolShortcuts.select.toUpperCase()})">⌖</button>
+        <button class="tool-picker" data-tool="pan" type="button" title="Pan (${configuredToolShortcuts.pan.toUpperCase()} or Space)" aria-label="Pan (${configuredToolShortcuts.pan.toUpperCase()} or Space)">✥</button>
+        <button class="tool-picker" data-tool="eraser" type="button" title="Eraser (${configuredToolShortcuts.eraser.toUpperCase()})" aria-label="Eraser (${configuredToolShortcuts.eraser.toUpperCase()})">⌫</button>
 
-        <button id="color-picker-fg" class="color-picker active" type="button" title="Foreground color (1)" aria-label="Foreground color (1)"></button>
-        <button id="color-picker-blue" class="color-picker" type="button" title="Blue (2)" aria-label="Blue (2)"></button>
-        <button id="color-picker-cyan" class="color-picker" type="button" title="Cyan (3)" aria-label="Cyan (3)"></button>
-        <button id="color-picker-green" class="color-picker" type="button" title="Green (4)" aria-label="Green (4)"></button>
-        <button id="color-picker-yellow" class="color-picker" type="button" title="Yellow (5)" aria-label="Yellow (5)"></button>
-        <button id="color-picker-orange" class="color-picker" type="button" title="Orange (6)" aria-label="Orange (6)"></button>
-        <button id="color-picker-red" class="color-picker" type="button" title="Red (7)" aria-label="Red (7)"></button>
-        <button id="color-picker-magenta" class="color-picker" type="button" title="Magenta (8)" aria-label="Magenta (8)"></button>
-        <button id="color-picker-purple" class="color-picker" type="button" title="Purple (9)" aria-label="Purple (9)"></button>
+        <button id="color-picker-fg" class="color-picker active" type="button" title="Foreground color (${configuredColorShortcuts.fg})" aria-label="Foreground color (${configuredColorShortcuts.fg})"></button>
+        <button id="color-picker-blue" class="color-picker" type="button" title="Blue (${configuredColorShortcuts.blue})" aria-label="Blue (${configuredColorShortcuts.blue})"></button>
+        <button id="color-picker-cyan" class="color-picker" type="button" title="Cyan (${configuredColorShortcuts.cyan})" aria-label="Cyan (${configuredColorShortcuts.cyan})"></button>
+        <button id="color-picker-green" class="color-picker" type="button" title="Green (${configuredColorShortcuts.green})" aria-label="Green (${configuredColorShortcuts.green})"></button>
+        <button id="color-picker-yellow" class="color-picker" type="button" title="Yellow (${configuredColorShortcuts.yellow})" aria-label="Yellow (${configuredColorShortcuts.yellow})"></button>
+        <button id="color-picker-orange" class="color-picker" type="button" title="Orange (${configuredColorShortcuts.orange})" aria-label="Orange (${configuredColorShortcuts.orange})"></button>
+        <button id="color-picker-red" class="color-picker" type="button" title="Red (${configuredColorShortcuts.red})" aria-label="Red (${configuredColorShortcuts.red})"></button>
+        <button id="color-picker-magenta" class="color-picker" type="button" title="Magenta (${configuredColorShortcuts.magenta})" aria-label="Magenta (${configuredColorShortcuts.magenta})"></button>
+        <button id="color-picker-purple" class="color-picker" type="button" title="Purple (${configuredColorShortcuts.purple})" aria-label="Purple (${configuredColorShortcuts.purple})"></button>
       </div>
     </div>
   `;
@@ -201,9 +225,9 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   const shapes: Shape[] = [];
   const images: CanvasImage[] = [];
   const pdfPages: CanvasPdfPage[] = [];
-  const backgroundColor = "#1a1b26";
-  const gridColor = "#292e42";
-  const backgroundPattern: BackgroundPattern = "dotted";
+  const backgroundColor = readCssVariable("--bg") || "#1a1b26";
+  const gridColor = readCssVariable("--bg-highlight") || "#292e42";
+  const backgroundPattern: BackgroundPattern = toWorkspaceBackgroundPattern(appConfig?.canvas.backgroundPattern);
   let documentId: string = crypto.randomUUID();
   let nextVectorOrder = 1;
 
@@ -241,27 +265,12 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     "color-picker-magenta": "--magenta",
     "color-picker-purple": "--purple",
   };
-  const toolShortcutByKey: Partial<Record<string, Tool>> = {
-    v: "select",
-    h: "pan",
-    p: "pen",
-    r: "rectangle",
-    o: "ellipse",
-    l: "line",
-    a: "arrow",
-    e: "eraser",
-  };
-  const colorButtonIdByShortcutDigit: Record<string, string> = {
-    "1": "color-picker-fg",
-    "2": "color-picker-blue",
-    "3": "color-picker-cyan",
-    "4": "color-picker-green",
-    "5": "color-picker-yellow",
-    "6": "color-picker-orange",
-    "7": "color-picker-red",
-    "8": "color-picker-magenta",
-    "9": "color-picker-purple",
-  };
+  const toolShortcutByKey: Partial<Record<string, Tool>> = Object.fromEntries(
+    normalizedToolShortcutEntries(configuredToolShortcuts).filter((entry): entry is readonly [string, Tool] => isTool(entry[1])),
+  );
+  const colorButtonIdByShortcutDigit: Record<string, string> = Object.fromEntries(
+    normalizedColorShortcutEntries(configuredColorShortcuts).map(([key, colorName]) => [key, `color-picker-${colorName}`]),
+  );
 
   function clampInputQuality(value: number) {
     if (!Number.isFinite(value)) {
@@ -273,6 +282,33 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   function isShapeTool(tool: Tool) {
     return tool === "rectangle" || tool === "ellipse" || tool === "line" || tool === "arrow";
+  }
+
+  function isTool(value: string): value is Tool {
+    return value === "pen"
+      || value === "rectangle"
+      || value === "ellipse"
+      || value === "line"
+      || value === "arrow"
+      || value === "select"
+      || value === "pan"
+      || value === "eraser";
+  }
+
+  function toWorkspaceBackgroundPattern(pattern: CanvasBackgroundPattern | undefined): BackgroundPattern {
+    if (pattern === "dots") {
+      return "dotted";
+    }
+
+    if (pattern === "lines") {
+      return "hlines";
+    }
+
+    if (pattern === "squares") {
+      return "grid";
+    }
+
+    return "dotted";
   }
 
   function readCssVariable(name: string) {

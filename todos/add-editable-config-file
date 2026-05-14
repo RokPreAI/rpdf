@@ -1,6 +1,6 @@
 Priority: 2
 Area: UX
-Status: current
+Status: done
 Depends on: add-config-and-toolbar-icons, add-excalidraw-style-tool-and-color-shortcuts
 
 Goal:
