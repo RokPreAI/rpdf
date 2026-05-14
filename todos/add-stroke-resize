@@ -1,0 +1,28 @@
+Priority: 2
+Area: Canvas
+Status: current
+Depends on: add-element-resize, add-stroke-selection-editing, improve-selection-hit-geometry
+
+Goal:
+Allow selected freehand strokes to be resized intentionally instead of leaving them as the one major selected item type that still cannot be resized.
+
+Context:
+The current resize system supports shapes, images, and imported PDF pages, but strokes were intentionally excluded in the first pass. The user now explicitly wants stroke resizing.
+
+Expected changes:
+
+- add resize-handle participation for stroke selections
+- define stable stroke geometry scaling from drag-start state
+- preserve pressure-derived width behavior sensibly when stroke geometry is resized
+
+Acceptance criteria:
+
+- Selecting a stroke shows usable resize handles when the selection is otherwise eligible for resize.
+- Dragging a resize handle rescales the stroke predictably instead of corrupting points or exploding in size.
+- Stroke resize does not produce zero, NaN, or infinite geometry values.
+- Resized strokes still render, save/load, and export correctly.
+
+Notes:
+
+- Prefer drag-start geometry snapshots so resize does not compound errors.
+- If stroke width should or should not scale with geometry resize, make that rule explicit and consistent.

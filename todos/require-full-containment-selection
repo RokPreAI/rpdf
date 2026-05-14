@@ -1,6 +1,6 @@
 Priority: 1
 Area: Canvas
-Status: current
+Status: done
 Depends on: improve-selection-hit-geometry, add-marquee-selection, add-multi-select
 
 Goal:

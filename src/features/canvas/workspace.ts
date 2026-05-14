@@ -1545,11 +1545,11 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     };
   }
 
-  function boundsIntersect(firstBounds: Bounds, secondBounds: Bounds) {
-    return firstBounds.minX <= secondBounds.maxX
-      && firstBounds.maxX >= secondBounds.minX
-      && firstBounds.minY <= secondBounds.maxY
-      && firstBounds.maxY >= secondBounds.minY;
+  function boundsContainBounds(containerBounds: Bounds, targetBounds: Bounds, tolerance = 0) {
+    return targetBounds.minX >= containerBounds.minX - tolerance
+      && targetBounds.maxX <= containerBounds.maxX + tolerance
+      && targetBounds.minY >= containerBounds.minY - tolerance
+      && targetBounds.maxY <= containerBounds.maxY + tolerance;
   }
 
   function pointInsideBounds(point: Point, bounds: Bounds, padding = 0) {
@@ -1561,6 +1561,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   function collectTargetsInBounds(bounds: Bounds) {
     const targets: SelectionTarget[] = [];
+    const containmentTolerance = Math.max(2 / camera.scale, 1);
 
     for (let pdfPageIndex = 0; pdfPageIndex < pdfPages.length; pdfPageIndex += 1) {
       const target: SelectionTarget = {
@@ -1569,7 +1570,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       };
       const targetSelectionBounds = targetBounds(target);
 
-      if (targetSelectionBounds && boundsIntersect(bounds, targetSelectionBounds)) {
+      if (targetSelectionBounds && boundsContainBounds(bounds, targetSelectionBounds, containmentTolerance)) {
         targets.push(target);
       }
     }
@@ -1581,7 +1582,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       };
       const targetSelectionBounds = targetBounds(target);
 
-      if (targetSelectionBounds && boundsIntersect(bounds, targetSelectionBounds)) {
+      if (targetSelectionBounds && boundsContainBounds(bounds, targetSelectionBounds, containmentTolerance)) {
         targets.push(target);
       }
     }
@@ -1589,7 +1590,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     for (const target of orderedVectorSelectionTargets()) {
       const targetSelectionBounds = targetBounds(target);
 
-      if (targetSelectionBounds && boundsIntersect(bounds, targetSelectionBounds)) {
+      if (targetSelectionBounds && boundsContainBounds(bounds, targetSelectionBounds, containmentTolerance)) {
         targets.push(target);
       }
     }
