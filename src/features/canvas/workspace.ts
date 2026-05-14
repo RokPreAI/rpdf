@@ -1,4 +1,5 @@
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
+import { invoke } from "@tauri-apps/api/core";
 
 import type {
   CanvasBackgroundPattern,
@@ -1267,9 +1268,16 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function updateSvgExportState() {
+    updateSvgExportStateMessage();
+  }
+
+  function updateSvgExportStateMessage(messageOverride?: string) {
     const exportState = currentSvgExportState();
     window.dispatchEvent(new CustomEvent("rpdf:canvas-svg-export-state", {
-      detail: exportState,
+      detail: {
+        eligible: exportState.eligible,
+        message: messageOverride ?? exportState.message,
+      },
     }));
   }
 
@@ -1580,7 +1588,7 @@ ${items}
 </svg>`;
   }
 
-  function exportSvg() {
+  async function exportSvg() {
     const exportState = currentSvgExportState();
 
     if (!exportState.eligible) {
@@ -1589,14 +1597,26 @@ ${items}
     }
 
     const svgMarkup = createSvgMarkup(exportState.vectors);
-    const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
-    const downloadUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
+    const suggestedFileName = selectedItems.length > 0 ? "canvas-selection.svg" : "canvas-document.svg";
 
-    anchor.href = downloadUrl;
-    anchor.download = selectedItems.length > 0 ? "canvas-selection.svg" : "canvas-document.svg";
-    anchor.click();
-    URL.revokeObjectURL(downloadUrl);
+    try {
+      const savedPath = await invoke<string | null>("save_svg_export", {
+        request: {
+          suggestedFileName,
+          svgMarkup,
+        },
+      });
+
+      if (savedPath) {
+        updateSvgExportStateMessage(`SVG exported to ${savedPath}`);
+        return;
+      }
+
+      updateSvgExportStateMessage("SVG export was cancelled.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      updateSvgExportStateMessage(`SVG export failed: ${message}`);
+    }
   }
 
   function orderedVectorSelectionTargets() {

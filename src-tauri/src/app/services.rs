@@ -11,6 +11,7 @@ use crate::contracts::dto::{
     ReadingReliabilityStateDto,
     SaveCanvasProjectRequestDto,
     SavePdfStudySessionRequestDto,
+    SaveSvgExportRequestDto,
     SpeakTextRequestDto,
     RenderPdfPageRequestDto,
     RenderPdfPageResponseDto,
@@ -121,6 +122,43 @@ impl AppServices {
         read_json_document(&request.file_path)
     }
 
+    pub fn save_svg_export(
+        &self,
+        request: &SaveSvgExportRequestDto,
+    ) -> Result<Option<String>, String> {
+        let svg_markup = request.svg_markup.trim();
+
+        if svg_markup.is_empty() {
+            return Err("SVG export markup was empty.".to_string());
+        }
+
+        let suggested_file_name = default_svg_file_name(&request.suggested_file_name);
+        let selected_path = rfd::FileDialog::new()
+            .add_filter("SVG image", &["svg"])
+            .set_file_name(&suggested_file_name)
+            .save_file();
+
+        let Some(mut export_path) = selected_path else {
+            return Ok(None);
+        };
+
+        if export_path.extension().is_none() {
+            export_path.set_extension("svg");
+        }
+
+        if let Some(parent) = export_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|error| format!("Could not create export directory: {error}"))?;
+            }
+        }
+
+        std::fs::write(&export_path, svg_markup.as_bytes())
+            .map_err(|error| format!("Could not write SVG export: {error}"))?;
+
+        Ok(Some(export_path.display().to_string()))
+    }
+
     pub fn render_pdf_page(
         &self,
         request: &RenderPdfPageRequestDto,
@@ -179,6 +217,20 @@ fn pdf_page_count(document_path: &str) -> Result<u32, String> {
     }
 
     Err("pdfinfo did not report a page count.".to_string())
+}
+
+fn default_svg_file_name(suggested_file_name: &str) -> String {
+    let trimmed = suggested_file_name.trim();
+
+    if trimmed.is_empty() {
+        return "canvas-export.svg".to_string();
+    }
+
+    if trimmed.to_ascii_lowercase().ends_with(".svg") {
+        return trimmed.to_string();
+    }
+
+    format!("{trimmed}.svg")
 }
 
 fn write_json_document<T>(file_path: &str, document: &T) -> Result<(), String>

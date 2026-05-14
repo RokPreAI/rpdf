@@ -1,10 +1,8 @@
 # Current TODOs
 
-- [ ] 2 Export harden-svg-export-and-save-path
+- [ ] 3 UX add-excalidraw-style-tool-and-color-shortcuts
 
 # TODOs
-
-- [ ] 3 UX add-excalidraw-style-tool-and-color-shortcuts
 
 # Done TODOs
 
@@ -38,6 +36,7 @@
 - [x] 2 Canvas add-selection-style-editing
 - [x] 2 Canvas add-multi-selection-resize
 - [x] 2 Canvas add-input-polling-rate-setting
+- [x] 2 Export harden-svg-export-and-save-path
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste

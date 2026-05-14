@@ -1,6 +1,6 @@
 Priority: 3
 Area: UX
-Status: pending
+Status: current
 Depends on: split-main-into-shell-and-modes, add-color-picker, add-draw-shapes
 
 Goal:
@@ -24,4 +24,3 @@ Acceptance criteria:
 Notes:
 
 - Match the spirit of Excalidraw-style access patterns even if exact key choices need to adapt to the current tool set.
-

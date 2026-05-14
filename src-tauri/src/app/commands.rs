@@ -15,6 +15,7 @@ use crate::contracts::dto::{
     SpeakTextRequestDto,
     RenderPdfPageRequestDto,
     RenderPdfPageResponseDto,
+    SaveSvgExportRequestDto,
 };
 use crate::domain::canvas::CanvasDocument;
 use crate::domain::pdf::PdfStudyDocument;
@@ -67,6 +68,14 @@ pub fn load_pdf_study_session(
     services: State<'_, AppServices>,
 ) -> Result<PdfStudyDocument, String> {
     services.load_pdf_study_session(&request)
+}
+
+#[tauri::command]
+pub fn save_svg_export(
+    request: SaveSvgExportRequestDto,
+    services: State<'_, AppServices>,
+) -> Result<Option<String>, String> {
+    services.save_svg_export(&request)
 }
 
 #[tauri::command]
