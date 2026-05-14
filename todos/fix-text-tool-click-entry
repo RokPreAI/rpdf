@@ -1,0 +1,27 @@
+Priority: 1
+Area: Canvas
+Status: done
+Depends on: add-text-tool
+
+Goal:
+Fix the first-pass text tool so a normal click reliably opens text entry and allows the user to type visible text onto the canvas.
+
+Context:
+The initial text tool added the editor on pointer-down. In practice that can collapse the editor before typing begins, especially in desktop-webview click sequences where focus changes complete after pointer-up.
+
+Expected changes:
+
+- move text-editor creation to a stable completed-click point
+- preserve the existing commit flow of blur or Ctrl+Enter / Cmd+Enter
+- keep text placement local to Canvas Mode without widening into re-edit or rich-text work
+
+Acceptance criteria:
+
+- Selecting the Text tool and clicking the canvas opens a visible editor that stays open long enough to type.
+- Typing text and blurring or confirming commits a visible text item to the canvas.
+- Empty clicks still fail closed without creating empty text items.
+
+Notes:
+
+- Keep the fix narrow and interaction-focused.
+- Re-editing existing text is still out of scope for this repair slice.

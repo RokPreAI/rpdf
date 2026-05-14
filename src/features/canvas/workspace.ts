@@ -162,6 +162,10 @@ type TextEditorSession = {
   point: Point;
 };
 
+type PendingTextPlacement = {
+  pointerId: number;
+};
+
 type Tool = "pen" | "rectangle" | "ellipse" | "line" | "arrow" | "text" | "select" | "pan" | "eraser";
 type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
@@ -273,6 +277,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let resizeSession: ResizeSession | null = null;
   let marqueeSession: MarqueeSession | null = null;
   let activeTextEditor: TextEditorSession | null = null;
+  let pendingTextPlacement: PendingTextPlacement | null = null;
   let isPanning = false;
   let isSpaceDown = false;
   let devicePixelRatioValue = window.devicePixelRatio || 1;
@@ -2950,7 +2955,10 @@ ${items}
     }
 
     if (selectedTool === "text") {
-      beginTextEditor(point);
+      pendingTextPlacement = {
+        pointerId: event.pointerId,
+      };
+      canvas.setPointerCapture(event.pointerId);
       return;
     }
 
@@ -3085,6 +3093,10 @@ ${items}
       return;
     }
 
+    if (selectedTool === "text") {
+      return;
+    }
+
     if (isShapeTool(selectedTool) && currentShape) {
       currentShape.end = { ...point };
       redraw();
@@ -3106,6 +3118,13 @@ ${items}
   };
 
   const onPointerUp = (event: PointerEvent) => {
+    const releasePoint = screenToWorld(event.clientX, event.clientY);
+
+    if (pendingTextPlacement?.pointerId === event.pointerId) {
+      pendingTextPlacement = null;
+      beginTextEditor(releasePoint);
+    }
+
     if (marqueeSession) {
       const marqueeBounds = normalizeBounds({
         minX: marqueeSession.origin.x,
@@ -3129,6 +3148,7 @@ ${items}
     moveAnchorPoint = null;
     resizeSession = null;
     marqueeSession = null;
+    pendingTextPlacement = null;
     isPanning = false;
     activeResizeHandle = null;
     redraw();
@@ -3145,6 +3165,7 @@ ${items}
     moveAnchorPoint = null;
     resizeSession = null;
     marqueeSession = null;
+    pendingTextPlacement = null;
     isPanning = false;
     activeResizeHandle = null;
     redraw();
