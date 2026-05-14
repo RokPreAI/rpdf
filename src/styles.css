@@ -412,6 +412,48 @@ button {
   flex-wrap: wrap;
 }
 
+.pdf-recent-paths {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pdf-recent-paths-header {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-dark);
+}
+
+.pdf-recent-paths-list {
+  display: grid;
+  gap: 8px;
+}
+
+.pdf-recent-path-button {
+  width: 100%;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  text-align: left;
+}
+
+.pdf-recent-path-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.pdf-recent-path-value {
+  max-width: 100%;
+  font-size: 0.75rem;
+  color: var(--fg-dark);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pdf-button {
   border: 1px solid rgba(122, 162, 247, 0.5);
   border-radius: var(--medium-radius);

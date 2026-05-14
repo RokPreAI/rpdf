@@ -45,6 +45,8 @@ type PdfWorkspaceState = {
 };
 
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
+const RECENT_PDF_PATHS_STORAGE_KEY = "rpdf.recent-pdf-paths.v1";
+const MAX_RECENT_PDF_PATHS = 5;
 
 export function mountPdfWorkspace(
   container: HTMLElement,
@@ -62,6 +64,10 @@ export function mountPdfWorkspace(
           <div class="pdf-action-row">
             <button id="pdf-open-button" class="pdf-button" type="button">📂 Open PDF</button>
             <button id="pdf-refresh-button" class="pdf-button ghost" type="button">↻ Refresh</button>
+          </div>
+          <div id="pdf-recent-paths-section" class="pdf-recent-paths" hidden>
+            <div class="pdf-recent-paths-header">Recent PDFs</div>
+            <div id="pdf-recent-paths-list" class="pdf-recent-paths-list"></div>
           </div>
           <p id="pdf-open-error" class="pdf-inline-error" hidden></p>
         </div>
@@ -190,6 +196,8 @@ export function mountPdfWorkspace(
   const pathInput = requireElement<HTMLInputElement>(container, "#pdf-path-input");
   const openButton = requireElement<HTMLButtonElement>(container, "#pdf-open-button");
   const refreshButton = requireElement<HTMLButtonElement>(container, "#pdf-refresh-button");
+  const recentPathsSection = requireElement<HTMLElement>(container, "#pdf-recent-paths-section");
+  const recentPathsList = requireElement<HTMLElement>(container, "#pdf-recent-paths-list");
   const prevButton = requireElement<HTMLButtonElement>(container, "#pdf-prev-button");
   const nextButton = requireElement<HTMLButtonElement>(container, "#pdf-next-button");
   const readButton = requireElement<HTMLButtonElement>(container, "#pdf-read-button");
@@ -265,6 +273,90 @@ export function mountPdfWorkspace(
 
   function renderBackendNotes(notes: string[]) {
     backendNotesList.innerHTML = notes.map((note) => `<li>${escapeText(note)}</li>`).join("");
+  }
+
+  function readRecentPdfPaths() {
+    const rawValue = window.localStorage.getItem(RECENT_PDF_PATHS_STORAGE_KEY);
+
+    if (!rawValue) {
+      return [] as string[];
+    }
+
+    try {
+      const parsed = JSON.parse(rawValue);
+
+      if (!Array.isArray(parsed)) {
+        return [] as string[];
+      }
+
+      return parsed
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .slice(0, MAX_RECENT_PDF_PATHS);
+    } catch (error) {
+      console.error("Could not parse recent PDF paths:", error);
+      window.localStorage.removeItem(RECENT_PDF_PATHS_STORAGE_KEY);
+      return [] as string[];
+    }
+  }
+
+  function writeRecentPdfPaths(paths: string[]) {
+    window.localStorage.setItem(
+      RECENT_PDF_PATHS_STORAGE_KEY,
+      JSON.stringify(paths.slice(0, MAX_RECENT_PDF_PATHS)),
+    );
+  }
+
+  function pushRecentPdfPath(documentPath: string) {
+    const normalizedPath = documentPath.trim();
+
+    if (!normalizedPath) {
+      return;
+    }
+
+    const nextPaths = [
+      normalizedPath,
+      ...readRecentPdfPaths().filter((entry) => entry !== normalizedPath),
+    ].slice(0, MAX_RECENT_PDF_PATHS);
+
+    writeRecentPdfPaths(nextPaths);
+    renderRecentPdfPaths();
+  }
+
+  function renderRecentPdfPaths() {
+    const recentPaths = readRecentPdfPaths();
+    recentPathsSection.hidden = recentPaths.length === 0;
+
+    if (recentPaths.length === 0) {
+      recentPathsList.replaceChildren();
+      return;
+    }
+
+    const buttons = recentPaths.map((recentPath) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "pdf-button ghost pdf-recent-path-button";
+      button.title = recentPath;
+
+      const name = document.createElement("span");
+      name.className = "pdf-recent-path-name";
+      name.textContent = fileNameFromPath(recentPath);
+
+      const value = document.createElement("span");
+      value.className = "pdf-recent-path-value";
+      value.textContent = recentPath;
+
+      button.append(name, value);
+      button.addEventListener("click", () => {
+        pathInput.value = recentPath;
+        void openDocument(recentPath);
+      });
+
+      return button;
+    });
+
+    recentPathsList.replaceChildren(...buttons);
   }
 
   function activeExtraction() {
@@ -867,14 +959,15 @@ export function mountPdfWorkspace(
     renderReadingPanel();
   }
 
-  async function openDocument() {
-    const documentPath = pathInput.value.trim();
+  async function openDocument(requestedPath?: string) {
+    const documentPath = (requestedPath ?? pathInput.value).trim();
 
     if (!documentPath) {
       setOpenError("Enter a PDF path first.");
       return;
     }
 
+    pathInput.value = documentPath;
     stopSpeaking();
     setOpenError(null);
 
@@ -887,6 +980,7 @@ export function mountPdfWorkspace(
       documentId = crypto.randomUUID();
       annotationsByPage.clear();
       state.pageIndex = 0;
+      pushRecentPdfPath(documentPath);
       backendName.textContent = `${bootstrap?.activePdfBackend.backendName ?? "PDF backend"}: ${state.document.backendReady ? "ready" : "boundary only"}`;
       await refreshPageState();
     } catch (error) {
@@ -1014,6 +1108,7 @@ export function mountPdfWorkspace(
 
   backendName.textContent = `${bootstrap?.activePdfBackend.backendName ?? "Backend unavailable"}: ${bootstrap?.activePdfBackend.configured ? "ready" : "boundary only"}`;
   renderBackendNotes(bootstrap?.activePdfBackend.notes ?? []);
+  renderRecentPdfPaths();
   renderDocumentState();
 
   function onPreferencesChanged(event: CustomEvent<{
@@ -1119,6 +1214,7 @@ export function mountPdfWorkspace(
       state.ocrExtraction = null;
       state.recolor = snapshot.document.recolor;
       pathInput.value = snapshot.document.sourcePdfPath;
+      pushRecentPdfPath(snapshot.document.sourcePdfPath);
       await refreshPageState();
       redrawAnnotations();
     },
