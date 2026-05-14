@@ -770,23 +770,35 @@ button {
   .pdf-layout {
     grid-template-columns: 1fr;
     overflow: auto;
+    padding: var(--medium-gap);
   }
 
   .workspace-header {
     flex-direction: column;
+    align-items: stretch;
+    padding: var(--medium-gap);
   }
 
   .header-actions {
+    min-width: 100%;
     width: 100%;
-    justify-items: stretch;
+    flex-basis: 100%;
+    justify-content: stretch;
+    align-items: stretch;
+  }
+
+  .project-path-field,
+  .backend-status {
+    width: 100%;
   }
 
   .project-path-field {
-    width: 100%;
+    flex-basis: auto;
   }
 
   .project-action-row {
     width: 100%;
+    justify-content: flex-start;
   }
 
   .backend-status {
@@ -802,15 +814,115 @@ button {
   .pdf-viewer-meta {
     text-align: left;
   }
+}
 
-  .header-actions {
-    min-width: 100%;
-    flex-basis: 100%;
-    justify-content: stretch;
+@media (max-width: 760px) {
+  .workspace-header {
+    gap: 12px;
+    padding: 12px;
   }
 
-  .project-path-field,
-  .backend-status {
+  .project-action-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .project-action-button {
+    justify-content: center;
+  }
+
+  .recovery-row {
+    margin-left: 0;
+  }
+
+  .canvas-toolbar {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    font-size: 12px;
+  }
+
+  .stroke-width-control {
+    top: auto;
+    bottom: 96px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: 320px;
+  }
+
+  .stroke-width-control input {
     width: 100%;
+  }
+
+  .canvas-pickers {
+    right: 12px;
+    left: 12px;
+    top: 12px;
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .color-picker,
+  .tool-picker {
+    width: 36px;
+    flex: 0 0 36px;
+  }
+
+  .pdf-layout {
+    padding: 12px;
+  }
+
+  .pdf-card {
+    padding: 14px;
+  }
+
+  .pdf-sidebar-card {
+    padding: 14px;
+  }
+
+  .pdf-stage-shell {
+    min-height: clamp(260px, 48vh, 560px);
+  }
+
+  .pdf-stage-footer {
+    gap: 8px;
+  }
+}
+
+@media (max-width: 560px) {
+  .mode-rail {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .brand-copy {
+    display: none;
+  }
+
+  .project-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .canvas-toolbar {
+    font-size: 11px;
+    padding: 7px 9px;
+  }
+
+  .stroke-width-control {
+    bottom: 132px;
+    max-width: none;
+  }
+
+  .canvas-pickers {
+    justify-content: flex-start;
+  }
+
+  .pdf-recolor-controls {
+    grid-template-columns: 1fr;
   }
 }
