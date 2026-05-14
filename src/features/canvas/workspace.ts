@@ -797,6 +797,44 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.strokeStyle = readCssVariable("--yellow") || "#e0af68";
 
     for (const target of selectedItems) {
+      if (target.kind === "stroke") {
+        const stroke = strokes[target.index];
+
+        if (stroke) {
+          ctx.save();
+          ctx.setLineDash([]);
+          ctx.strokeStyle = readCssVariable("--cyan") || "#7dcfff";
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+
+          if (stroke.points.length === 1) {
+            const point = stroke.points[0];
+            const radius = Math.max(stroke.baseWidth * 0.9, 6 / camera.scale);
+
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.lineWidth = Math.max(stroke.baseWidth + 4 / camera.scale, 6 / camera.scale);
+
+            for (let index = 0; index < stroke.points.length; index += 1) {
+              const strokePoint = stroke.points[index];
+
+              if (index === 0) {
+                ctx.moveTo(strokePoint.x, strokePoint.y);
+              } else {
+                ctx.lineTo(strokePoint.x, strokePoint.y);
+              }
+            }
+
+            ctx.stroke();
+          }
+
+          ctx.restore();
+        }
+      }
+
       const bounds = targetBounds(target);
 
       if (!bounds) {
@@ -1165,6 +1203,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       && firstBounds.maxX >= secondBounds.minX
       && firstBounds.minY <= secondBounds.maxY
       && firstBounds.maxY >= secondBounds.minY;
+  }
+
+  function pointInsideBounds(point: Point, bounds: Bounds, padding = 0) {
+    return point.x >= bounds.minX - padding
+      && point.x <= bounds.maxX + padding
+      && point.y >= bounds.minY - padding
+      && point.y <= bounds.maxY + padding;
   }
 
   function collectTargetsInBounds(bounds: Bounds) {
@@ -2094,6 +2139,12 @@ ${items}
       const clickedSelectedTarget = pointerSelection
         ? selectedItems.find((target) => selectionKeyMatches(target, pointerSelectionKey)) ?? null
         : null;
+      const selectedBounds = currentSelectionBounds();
+      const clickedSelectionBounds = !pointerSelection
+        && !additiveSelection
+        && Boolean(selectedBounds)
+        && selectedBounds !== null
+        && pointInsideBounds(point, selectedBounds, Math.max(8 / camera.scale, 4));
 
       if (clickedSelectedTarget && resizeHandle) {
         const originalBounds = targetBounds(clickedSelectedTarget);
@@ -2121,6 +2172,15 @@ ${items}
           redraw();
           return;
         }
+      }
+
+      if (clickedSelectionBounds) {
+        activeResizeHandle = resizeHandle;
+        moveAnchorPoint = point;
+        canvas.setPointerCapture(event.pointerId);
+        updateCursor();
+        redraw();
+        return;
       }
 
       if (pointerSelection) {

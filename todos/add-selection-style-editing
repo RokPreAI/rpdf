@@ -1,6 +1,6 @@
 Priority: 2
 Area: Canvas
-Status: pending
+Status: current
 Depends on: add-multi-select, add-stroke-selection-editing
 
 Goal:
@@ -24,4 +24,3 @@ Acceptance criteria:
 Notes:
 
 - Keep this scoped to post-selection style edits, not a full inspector panel redesign.
-
