@@ -1,6 +1,6 @@
 Priority: 3
 Area: Canvas
-Status: current
+Status: done
 Depends on: split-main-into-shell-and-modes, add-save-load-project-files, add-svg-export-eligibility
 
 Goal:

@@ -14,6 +14,8 @@ pub struct CanvasDocument {
     pub strokes: Vec<CanvasStroke>,
     #[serde(default)]
     pub shapes: Vec<CanvasShape>,
+    #[serde(default)]
+    pub texts: Vec<CanvasText>,
     pub images: Vec<CanvasImagePlacement>,
     #[serde(default)]
     pub pdf_pages: Vec<CanvasPdfPagePlacement>,
@@ -64,6 +66,18 @@ pub struct CanvasShape {
     pub order: Option<u32>,
     pub start: CanvasShapePoint,
     pub end: CanvasShapePoint,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CanvasText {
+    pub id: String,
+    pub text: String,
+    pub color: String,
+    pub font_size: f32,
+    #[serde(default)]
+    pub order: Option<u32>,
+    pub x: f32,
+    pub y: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

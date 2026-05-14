@@ -45,6 +45,18 @@ type Shape = {
   end: Point;
 };
 
+type CanvasText = {
+  id: string;
+  text: string;
+  color: string;
+  fontSize: number;
+  order: number;
+  x: number;
+  y: number;
+};
+
+type DrawableItem = Stroke | Shape | CanvasText;
+type SvgExportItem = Stroke | Shape | CanvasText;
 type VectorItem = Stroke | Shape;
 
 type Camera = {
@@ -95,6 +107,10 @@ type SelectionTarget =
     index: number;
   }
   | {
+    kind: "text";
+    index: number;
+  }
+  | {
     kind: "image";
     index: number;
   }
@@ -141,9 +157,15 @@ type MarqueeSession = {
   additive: boolean;
 };
 
-type Tool = "pen" | "rectangle" | "ellipse" | "line" | "arrow" | "select" | "pan" | "eraser";
+type TextEditorSession = {
+  element: HTMLTextAreaElement;
+  point: Point;
+};
+
+type Tool = "pen" | "rectangle" | "ellipse" | "line" | "arrow" | "text" | "select" | "pan" | "eraser";
 type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
+const TEXT_FONT_FAMILY = "\"JetBrains Mono\", \"Fira Code\", monospace";
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
   const appConfig = getActiveAppConfig();
@@ -174,7 +196,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <canvas class="canvas-surface"></canvas>
 
       <div class="canvas-toolbar">
-        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo
+        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, text via toolbar, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo
       </div>
 
       <div class="stroke-width-control">
@@ -196,6 +218,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         <button class="tool-picker" data-tool="ellipse" type="button" title="Ellipse (${configuredToolShortcuts.ellipse.toUpperCase()})" aria-label="Ellipse (${configuredToolShortcuts.ellipse.toUpperCase()})">◯</button>
         <button class="tool-picker" data-tool="line" type="button" title="Line (${configuredToolShortcuts.line.toUpperCase()})" aria-label="Line (${configuredToolShortcuts.line.toUpperCase()})">／</button>
         <button class="tool-picker" data-tool="arrow" type="button" title="Arrow (${configuredToolShortcuts.arrow.toUpperCase()})" aria-label="Arrow (${configuredToolShortcuts.arrow.toUpperCase()})">↗</button>
+        <button class="tool-picker" data-tool="text" type="button" title="Text" aria-label="Text">T</button>
         <button class="tool-picker" data-tool="select" type="button" title="Select (${configuredToolShortcuts.select.toUpperCase()})" aria-label="Select (${configuredToolShortcuts.select.toUpperCase()})">⌖</button>
         <button class="tool-picker" data-tool="pan" type="button" title="Pan (${configuredToolShortcuts.pan.toUpperCase()} or Space)" aria-label="Pan (${configuredToolShortcuts.pan.toUpperCase()} or Space)">✥</button>
         <button class="tool-picker" data-tool="eraser" type="button" title="Eraser (${configuredToolShortcuts.eraser.toUpperCase()})" aria-label="Eraser (${configuredToolShortcuts.eraser.toUpperCase()})">⌫</button>
@@ -223,6 +246,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   const ctx = context;
   const strokes: Stroke[] = [];
   const shapes: Shape[] = [];
+  const texts: CanvasText[] = [];
   const images: CanvasImage[] = [];
   const pdfPages: CanvasPdfPage[] = [];
   const backgroundColor = readCssVariable("--bg") || "#1a1b26";
@@ -248,6 +272,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let activeResizeHandle: ResizeHandle | null = null;
   let resizeSession: ResizeSession | null = null;
   let marqueeSession: MarqueeSession | null = null;
+  let activeTextEditor: TextEditorSession | null = null;
   let isPanning = false;
   let isSpaceDown = false;
   let devicePixelRatioValue = window.devicePixelRatio || 1;
@@ -290,6 +315,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       || value === "ellipse"
       || value === "line"
       || value === "arrow"
+      || value === "text"
       || value === "select"
       || value === "pan"
       || value === "eraser";
@@ -403,7 +429,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return;
     }
 
-    if (selectedTool === "pen" || isShapeTool(selectedTool)) {
+    if (selectedTool === "pen" || isShapeTool(selectedTool) || selectedTool === "text") {
       canvas.style.cursor = "crosshair";
     } else if (selectedTool === "select") {
       if (resizeSession?.handle || activeResizeHandle) {
@@ -662,7 +688,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
         const tool = button.dataset.tool;
 
-        if (tool !== "pen" && tool !== "rectangle" && tool !== "ellipse" && tool !== "line" && tool !== "arrow" && tool !== "select" && tool !== "pan" && tool !== "eraser") {
+        if (tool !== "pen" && tool !== "rectangle" && tool !== "ellipse" && tool !== "line" && tool !== "arrow" && tool !== "text" && tool !== "select" && tool !== "pan" && tool !== "eraser") {
           return;
         }
 
@@ -934,6 +960,61 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.restore();
   }
 
+  function textLines(textItem: CanvasText) {
+    const lines = textItem.text.split(/\r?\n/);
+    return lines.length > 0 ? lines : [""];
+  }
+
+  function textLineHeight(textItem: CanvasText) {
+    return Math.max(textItem.fontSize * 1.25, textItem.fontSize + 4);
+  }
+
+  function withTextFont<T>(textItem: CanvasText, callback: () => T) {
+    ctx.save();
+    ctx.font = `${textItem.fontSize}px ${TEXT_FONT_FAMILY}`;
+    ctx.textBaseline = "top";
+    const result = callback();
+    ctx.restore();
+    return result;
+  }
+
+  function textBounds(textItem: CanvasText): Bounds {
+    return withTextFont(textItem, () => {
+      const lineHeight = textLineHeight(textItem);
+      const lines = textLines(textItem);
+      const width = Math.max(
+        textItem.fontSize * 0.6,
+        ...lines.map((line) => ctx.measureText(line).width),
+      );
+      const height = Math.max(lineHeight, lines.length * lineHeight);
+
+      return normalizeBounds({
+        minX: textItem.x,
+        minY: textItem.y,
+        maxX: textItem.x + width,
+        maxY: textItem.y + height,
+      });
+    });
+  }
+
+  function drawTextItem(textItem: CanvasText) {
+    const lines = textLines(textItem);
+    const lineHeight = textLineHeight(textItem);
+
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.scale, camera.scale);
+    ctx.fillStyle = textItem.color;
+    ctx.font = `${textItem.fontSize}px ${TEXT_FONT_FAMILY}`;
+    ctx.textBaseline = "top";
+
+    lines.forEach((line, index) => {
+      ctx.fillText(line, textItem.x, textItem.y + lineHeight * index);
+    });
+
+    ctx.restore();
+  }
+
   function drawImages() {
     ctx.save();
     ctx.translate(camera.x, camera.y);
@@ -970,8 +1051,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.restore();
   }
 
-  function orderedVectorItems() {
-    return [...strokes, ...shapes].sort((firstItem, secondItem) => firstItem.order - secondItem.order);
+  function orderedDrawableItems() {
+    return [...strokes, ...shapes, ...texts].sort((firstItem, secondItem) => firstItem.order - secondItem.order);
+  }
+
+  function orderedSvgExportItems() {
+    return orderedDrawableItems().filter((item): item is SvgExportItem => (
+      "points" in item || "kind" in item || "fontSize" in item
+    ));
   }
 
   function normalizeBounds(bounds: Bounds) {
@@ -1018,6 +1105,11 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     if (target.kind === "shape") {
       const shape = shapes[target.index];
       return shape ? shapeGeometryBounds(shape) : null;
+    }
+
+    if (target.kind === "text") {
+      const textItem = texts[target.index];
+      return textItem ? textBounds(textItem) : null;
     }
 
     const stroke = strokes[target.index];
@@ -1256,7 +1348,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
   function currentSvgExportState() {
     if (selectedItems.length > 0) {
-      const vectors: VectorItem[] = [];
+      const vectors: SvgExportItem[] = [];
 
       for (const target of selectedItems) {
         if (target.kind === "image") {
@@ -1290,13 +1382,28 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
           continue;
         }
 
+        if (target.kind === "text") {
+          const textItem = texts[target.index];
+
+          if (!textItem) {
+            return {
+              eligible: false,
+              message: "A selected text item is no longer available.",
+              vectors: [] as SvgExportItem[],
+            };
+          }
+
+          vectors.push(textItem);
+          continue;
+        }
+
         const shape = shapes[target.index];
 
         if (!shape) {
           return {
             eligible: false,
             message: "A selected shape is no longer available.",
-            vectors: [] as VectorItem[],
+            vectors: [] as SvgExportItem[],
           };
         }
 
@@ -1320,19 +1427,19 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       };
     }
 
-    const vectors = orderedVectorItems();
+      const vectors = orderedSvgExportItems();
 
     if (vectors.length === 0) {
       return {
         eligible: false,
-        message: "Draw at least one stroke or shape before exporting SVG.",
-        vectors: [] as VectorItem[],
+        message: "Draw at least one stroke, shape, or text item before exporting SVG.",
+        vectors: [] as SvgExportItem[],
       };
     }
 
     return {
       eligible: true,
-      message: "SVG export will include the full vector canvas.",
+      message: "SVG export will include the full vector canvas and text items.",
       vectors,
     };
   }
@@ -1363,11 +1470,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     drawImages();
     drawPdfPages();
 
-    for (const vectorItem of orderedVectorItems()) {
-      if ("points" in vectorItem) {
-        drawStroke(vectorItem);
+    for (const item of orderedDrawableItems()) {
+      if ("points" in item) {
+        drawStroke(item);
+      } else if ("kind" in item) {
+        drawShape(item);
       } else {
-        drawShape(vectorItem);
+        drawTextItem(item);
       }
     }
 
@@ -1519,6 +1628,12 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       }
     }
 
+    for (let textIndex = texts.length - 1; textIndex >= 0; textIndex -= 1) {
+      if (pointInsideBounds(point, textBounds(texts[textIndex]), eraserRadius)) {
+        texts.splice(textIndex, 1);
+      }
+    }
+
     for (let strokeIndex = strokes.length - 1; strokeIndex >= 0; strokeIndex -= 1) {
       const stroke = strokes[strokeIndex];
 
@@ -1570,9 +1685,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     };
   }
 
-  function vectorItemBounds(vectorItem: VectorItem) {
+  function vectorItemBounds(vectorItem: SvgExportItem) {
     if ("points" in vectorItem) {
       return strokeExportBounds(vectorItem);
+    }
+
+    if ("fontSize" in vectorItem) {
+      return textBounds(vectorItem);
     }
 
     const bounds = shapeBounds(vectorItem);
@@ -1627,7 +1746,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       }
     }
 
-    for (const target of orderedVectorSelectionTargets()) {
+    for (const target of orderedDrawableSelectionTargets()) {
       const targetSelectionBounds = targetBounds(target);
 
       if (targetSelectionBounds && boundsContainBounds(bounds, targetSelectionBounds, containmentTolerance)) {
@@ -1663,7 +1782,17 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     return `<ellipse cx="${centerX - minX}" cy="${centerY - minY}" rx="${radiusX}" ry="${radiusY}" fill="none" stroke="${escapeXml(shape.color)}" stroke-width="${shape.baseWidth}" />`;
   }
 
-  function createSvgMarkup(exportVectors: VectorItem[]) {
+  function createSvgTextMarkup(textItem: CanvasText, minX: number, minY: number) {
+    const lines = textLines(textItem);
+    const lineHeight = textLineHeight(textItem);
+    const tspans = lines
+      .map((line, index) => `<tspan x="${textItem.x - minX}" y="${textItem.y - minY + index * lineHeight}">${escapeXml(line || " ")}</tspan>`)
+      .join("");
+
+    return `<text fill="${escapeXml(textItem.color)}" font-size="${textItem.fontSize}" font-family="${escapeXml(TEXT_FONT_FAMILY)}" xml:space="preserve">${tspans}</text>`;
+  }
+
+  function createSvgMarkup(exportVectors: SvgExportItem[]) {
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
@@ -1700,6 +1829,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
           .join(" ");
 
         return `<path d="${commands}" fill="none" stroke="${escapeXml(vectorItem.color)}" stroke-width="${vectorItem.baseWidth}" stroke-linecap="round" stroke-linejoin="round" />`;
+      }
+
+      if ("fontSize" in vectorItem) {
+        return createSvgTextMarkup(vectorItem, minX, minY);
       }
 
       return createSvgShapeMarkup(vectorItem, minX, minY);
@@ -1742,18 +1875,23 @@ ${items}
     }
   }
 
-  function orderedVectorSelectionTargets() {
-    return [...strokes, ...shapes]
+  function orderedDrawableSelectionTargets() {
+    return [...strokes, ...shapes, ...texts]
       .sort((firstItem, secondItem) => secondItem.order - firstItem.order)
-      .map((vectorItem) => ("points" in vectorItem
+      .map((item) => ("points" in item
         ? {
           kind: "stroke" as const,
-          index: strokes.findIndex((stroke) => stroke.id === vectorItem.id),
+          index: strokes.findIndex((stroke) => stroke.id === item.id),
         }
-        : {
+        : "kind" in item
+          ? {
           kind: "shape" as const,
-          index: shapes.findIndex((shape) => shape.id === vectorItem.id),
-        }))
+          index: shapes.findIndex((shape) => shape.id === item.id),
+        }
+          : {
+            kind: "text" as const,
+            index: texts.findIndex((textItem) => textItem.id === item.id),
+          }))
       .filter((target) => target.index >= 0);
   }
 
@@ -1768,6 +1906,10 @@ ${items}
 
     if (target.kind === "shape") {
       return shapes[target.index]?.id ?? null;
+    }
+
+    if (target.kind === "text") {
+      return texts[target.index]?.id ?? null;
     }
 
     return strokes[target.index]?.id ?? null;
@@ -1877,6 +2019,11 @@ ${items}
       return index >= 0 ? { kind: "shape", index } : null;
     }
 
+    if (selection.kind === "text") {
+      const index = texts.findIndex((textItem) => textItem.id === selection.id);
+      return index >= 0 ? { kind: "text", index } : null;
+    }
+
     const index = strokes.findIndex((stroke) => stroke.id === selection.id);
     return index >= 0 ? { kind: "stroke", index } : null;
   }
@@ -1933,16 +2080,18 @@ ${items}
       }
     }
 
-    for (const target of orderedVectorSelectionTargets()) {
-      const vectorItem = target.kind === "shape"
+    for (const target of orderedDrawableSelectionTargets()) {
+      const drawableItem = target.kind === "shape"
         ? shapes[target.index]
-        : strokes[target.index];
+        : target.kind === "text"
+          ? texts[target.index]
+          : strokes[target.index];
 
-      if (!vectorItem) {
+      if (!drawableItem) {
         continue;
       }
 
-      const bounds = vectorItemBounds(vectorItem);
+      const bounds = target.kind === "text" ? textBounds(drawableItem as CanvasText) : vectorItemBounds(drawableItem as VectorItem);
 
       if (!bounds) {
         continue;
@@ -1957,10 +2106,14 @@ ${items}
         continue;
       }
 
-      const tolerance = selectionToleranceForWidth(vectorItem.baseWidth);
+      if (target.kind === "text") {
+        return target;
+      }
+
+      const tolerance = selectionToleranceForWidth((drawableItem as VectorItem).baseWidth);
 
       if (target.kind === "shape") {
-        const shape = vectorItem as Shape;
+        const shape = drawableItem as Shape;
 
         if (shapeContainsPoint(shape, point, tolerance)) {
           return target;
@@ -1968,7 +2121,7 @@ ${items}
         continue;
       }
 
-      const stroke = vectorItem as Stroke;
+      const stroke = drawableItem as Stroke;
 
       if (strokeContainsPoint(stroke, point, tolerance)) {
         return target;
@@ -2019,6 +2172,18 @@ ${items}
         shape.start.y += deltaY;
         shape.end.x += deltaX;
         shape.end.y += deltaY;
+        continue;
+      }
+
+      if (target.kind === "text") {
+        const textItem = texts[target.index];
+
+        if (!textItem) {
+          continue;
+        }
+
+        textItem.x += deltaX;
+        textItem.y += deltaY;
         continue;
       }
 
@@ -2602,18 +2767,139 @@ ${items}
     return shape;
   }
 
+  function createTextItem(point: Point, text: string) {
+    const textItem: CanvasText = {
+      id: crypto.randomUUID(),
+      text,
+      color: strokeColor,
+      fontSize: Math.max(14, Math.round(baseStrokeWidth * 6)),
+      order: nextVectorOrder,
+      x: point.x,
+      y: point.y,
+    };
+
+    nextVectorOrder += 1;
+    texts.push(textItem);
+    return textItem;
+  }
+
+  function worldToScreen(point: Point) {
+    return {
+      x: camera.x + point.x * camera.scale,
+      y: camera.y + point.y * camera.scale,
+    };
+  }
+
+  function teardownTextEditor() {
+    if (!activeTextEditor) {
+      return;
+    }
+
+    activeTextEditor.element.remove();
+    activeTextEditor = null;
+  }
+
+  function commitTextEditor() {
+    if (!activeTextEditor) {
+      return false;
+    }
+
+    const { element, point } = activeTextEditor;
+    const value = element.value.trim();
+    teardownTextEditor();
+
+    if (!value) {
+      redraw();
+      return false;
+    }
+
+    const textItem = createTextItem(point, value);
+    const textIndex = texts.findIndex((entry) => entry.id === textItem.id);
+
+    if (textIndex >= 0) {
+      setSelection([{ kind: "text", index: textIndex }]);
+    }
+
+    redraw();
+    return true;
+  }
+
+  function cancelTextEditor() {
+    if (!activeTextEditor) {
+      return;
+    }
+
+    teardownTextEditor();
+    redraw();
+  }
+
+  function beginTextEditor(point: Point) {
+    commitTextEditor();
+    setSelection([]);
+
+    const editor = document.createElement("textarea");
+    const screenPoint = worldToScreen(point);
+    const editorFontSize = Math.max(14, Math.round(Math.max(14, baseStrokeWidth * 6) * camera.scale));
+
+    editor.className = "canvas-text-editor";
+    editor.rows = 3;
+    editor.placeholder = "Type text";
+    editor.value = "";
+    editor.style.left = `${screenPoint.x}px`;
+    editor.style.top = `${screenPoint.y}px`;
+    editor.style.fontSize = `${editorFontSize}px`;
+    editor.style.color = strokeColor;
+    editor.style.fontFamily = TEXT_FONT_FAMILY;
+
+    const onEditorKeyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === "Escape") {
+        keyEvent.preventDefault();
+        cancelTextEditor();
+        return;
+      }
+
+      if (keyEvent.key === "Enter" && (keyEvent.ctrlKey || keyEvent.metaKey)) {
+        keyEvent.preventDefault();
+        commitTextEditor();
+      }
+    };
+
+    editor.addEventListener("keydown", onEditorKeyDown);
+    editor.addEventListener("blur", () => {
+      commitTextEditor();
+    }, { once: true });
+
+    container.querySelector(".canvas-workspace")?.append(editor);
+    activeTextEditor = {
+      element: editor,
+      point,
+    };
+    editor.focus();
+    redraw();
+  }
+
   function removeLastVectorItem() {
     const lastStroke = strokes[strokes.length - 1];
     const lastShape = shapes[shapes.length - 1];
+    const lastText = texts[texts.length - 1];
+    const lastItem = [lastStroke, lastShape, lastText]
+      .filter((item): item is DrawableItem => Boolean(item))
+      .sort((firstItem, secondItem) => secondItem.order - firstItem.order)[0];
 
-    if (lastStroke && (!lastShape || lastStroke.order > lastShape.order)) {
+    if (lastItem && "points" in lastItem) {
       strokes.pop();
       normalizeSelection();
       return;
     }
 
-    if (lastShape) {
+    if (lastItem && "kind" in lastItem) {
       shapes.pop();
+      normalizeSelection();
+      return;
+    }
+
+    if (lastText) {
+      texts.pop();
       normalizeSelection();
     }
   }
@@ -2645,6 +2931,10 @@ ${items}
     const point = screenToWorld(event.clientX, event.clientY);
     const pressure = getPointerPressure(event);
 
+    if (activeTextEditor && !activeTextEditor.element.contains(event.target as Node | null)) {
+      commitTextEditor();
+    }
+
     if (selectedTool === "pan" || isSpaceDown || event.button === 1 || event.button === 2) {
       isPanning = true;
       canvas.setPointerCapture(event.pointerId);
@@ -2656,6 +2946,11 @@ ${items}
       eraseAtPoint(point);
       setSelection([]);
       redraw();
+      return;
+    }
+
+    if (selectedTool === "text") {
+      beginTextEditor(point);
       return;
     }
 
@@ -2879,6 +3174,10 @@ ${items}
   const onKeyDown = (event: KeyboardEvent) => {
     const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
 
+    if (isEditableTarget(event.target)) {
+      return;
+    }
+
     if (event.code === "Space") {
       isSpaceDown = true;
       updateCursor();
@@ -2893,6 +3192,7 @@ ${items}
         selectedItems.some((target) => (
           (target.kind === "stroke" && target.index >= strokes.length)
           || (target.kind === "shape" && target.index >= shapes.length)
+          || (target.kind === "text" && target.index >= texts.length)
           || (target.kind === "image" && target.index >= images.length)
           || (target.kind === "pdf_page" && target.index >= pdfPages.length)
         ))
@@ -2911,10 +3211,6 @@ ${items}
           event.preventDefault();
         }
       });
-    }
-
-    if (isEditableTarget(event.target)) {
-      return;
     }
 
     if (event.ctrlKey || event.metaKey || event.altKey) {
@@ -3088,6 +3384,8 @@ ${items}
 
   return {
     exportDocument(): WorkspaceDocumentSnapshot {
+      commitTextEditor();
+
       const document: CanvasDocument = {
         version: {
           major: 1,
@@ -3107,6 +3405,15 @@ ${items}
           })),
         })),
         shapes: shapes.map(toCanvasShapeDocument),
+        texts: texts.map((textItem) => ({
+          id: textItem.id,
+          text: textItem.text,
+          color: textItem.color,
+          fontSize: textItem.fontSize,
+          order: textItem.order,
+          x: textItem.x,
+          y: textItem.y,
+        })),
         images: images.map((image) => ({
           id: image.id,
           assetPath: image.assetPath,
@@ -3140,10 +3447,12 @@ ${items}
       }
 
       documentId = snapshot.document.id;
+      cancelTextEditor();
       setSelection([]);
       moveAnchorPoint = null;
       strokes.length = 0;
       shapes.length = 0;
+      texts.length = 0;
       pdfPages.length = 0;
 
       strokes.push(
@@ -3178,10 +3487,23 @@ ${items}
         })),
       );
 
+      texts.push(
+        ...(snapshot.document.texts ?? []).map((textItem, index) => ({
+          id: textItem.id,
+          text: textItem.text,
+          color: textItem.color,
+          fontSize: textItem.fontSize,
+          order: textItem.order ?? snapshot.document.strokes.length + snapshot.document.shapes.length + index + 1,
+          x: textItem.x,
+          y: textItem.y,
+        })),
+      );
+
       nextVectorOrder = Math.max(
         1,
         ...strokes.map((stroke) => stroke.order + 1),
         ...shapes.map((shape) => shape.order + 1),
+        ...texts.map((textItem) => textItem.order + 1),
       );
 
       await importImages(snapshot.document.images);
@@ -3191,6 +3513,7 @@ ${items}
       redraw();
     },
     destroy() {
+      cancelTextEditor();
       window.removeEventListener("paste", onPaste);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);

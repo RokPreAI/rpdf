@@ -116,6 +116,16 @@ export type CanvasShapeDocument = {
   };
 };
 
+export type CanvasTextDocument = {
+  id: string;
+  text: string;
+  color: string;
+  fontSize: number;
+  order?: number;
+  x: number;
+  y: number;
+};
+
 export type CanvasImagePlacementDocument = {
   id: string;
   assetPath: string;
@@ -143,12 +153,13 @@ export type CanvasDocument = {
   backgroundPattern: CanvasBackgroundPattern;
   strokes: CanvasStrokeDocument[];
   shapes: CanvasShapeDocument[];
+  texts: CanvasTextDocument[];
   images: CanvasImagePlacementDocument[];
   pdfPages: CanvasPdfPagePlacementDocument[];
 };
 
 export type CanvasSelectionTargetDocument = {
-  kind: "stroke" | "shape" | "image" | "pdf_page";
+  kind: "stroke" | "shape" | "text" | "image" | "pdf_page";
   id: string;
 };
 

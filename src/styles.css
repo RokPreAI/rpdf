@@ -297,6 +297,19 @@ button {
   color: var(--fg-dark);
 }
 
+.canvas-text-editor {
+  position: absolute;
+  min-width: 180px;
+  min-height: 84px;
+  padding: 8px 10px;
+  border: 1px solid rgba(192, 202, 245, 0.24);
+  border-radius: var(--medium-radius);
+  background: rgba(12, 14, 20, 0.92);
+  color: var(--fg);
+  resize: both;
+  z-index: 5;
+}
+
 .canvas-pickers {
   position: absolute;
   right: var(--medium-gap);
