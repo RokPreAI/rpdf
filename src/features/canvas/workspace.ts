@@ -146,7 +146,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <canvas class="canvas-surface"></canvas>
 
       <div class="canvas-toolbar">
-        Left drag: draw/select | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
+        Shortcuts: V select, H pan, P pen, R rectangle, O ellipse, L line, A arrow, E eraser, 1-9 colors | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo
       </div>
 
       <div class="stroke-width-control">
@@ -163,24 +163,24 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       </div>
 
       <div class="canvas-pickers">
-        <button class="tool-picker active" data-tool="pen" type="button" title="Pen" aria-label="Pen">✎</button>
-        <button class="tool-picker" data-tool="rectangle" type="button" title="Rectangle" aria-label="Rectangle">▭</button>
-        <button class="tool-picker" data-tool="ellipse" type="button" title="Ellipse" aria-label="Ellipse">◯</button>
-        <button class="tool-picker" data-tool="line" type="button" title="Line" aria-label="Line">／</button>
-        <button class="tool-picker" data-tool="arrow" type="button" title="Arrow" aria-label="Arrow">↗</button>
-        <button class="tool-picker" data-tool="select" type="button" title="Select" aria-label="Select">⌖</button>
-        <button class="tool-picker" data-tool="pan" type="button" title="Pan" aria-label="Pan">✥</button>
-        <button class="tool-picker" data-tool="eraser" type="button" title="Eraser" aria-label="Eraser">⌫</button>
+        <button class="tool-picker active" data-tool="pen" type="button" title="Pen (P)" aria-label="Pen (P)">✎</button>
+        <button class="tool-picker" data-tool="rectangle" type="button" title="Rectangle (R)" aria-label="Rectangle (R)">▭</button>
+        <button class="tool-picker" data-tool="ellipse" type="button" title="Ellipse (O)" aria-label="Ellipse (O)">◯</button>
+        <button class="tool-picker" data-tool="line" type="button" title="Line (L)" aria-label="Line (L)">／</button>
+        <button class="tool-picker" data-tool="arrow" type="button" title="Arrow (A)" aria-label="Arrow (A)">↗</button>
+        <button class="tool-picker" data-tool="select" type="button" title="Select (V)" aria-label="Select (V)">⌖</button>
+        <button class="tool-picker" data-tool="pan" type="button" title="Pan (H or Space)" aria-label="Pan (H or Space)">✥</button>
+        <button class="tool-picker" data-tool="eraser" type="button" title="Eraser (E)" aria-label="Eraser (E)">⌫</button>
 
-        <button id="color-picker-fg" class="color-picker active" type="button"></button>
-        <button id="color-picker-blue" class="color-picker" type="button"></button>
-        <button id="color-picker-cyan" class="color-picker" type="button"></button>
-        <button id="color-picker-green" class="color-picker" type="button"></button>
-        <button id="color-picker-yellow" class="color-picker" type="button"></button>
-        <button id="color-picker-orange" class="color-picker" type="button"></button>
-        <button id="color-picker-red" class="color-picker" type="button"></button>
-        <button id="color-picker-magenta" class="color-picker" type="button"></button>
-        <button id="color-picker-purple" class="color-picker" type="button"></button>
+        <button id="color-picker-fg" class="color-picker active" type="button" title="Foreground color (1)" aria-label="Foreground color (1)"></button>
+        <button id="color-picker-blue" class="color-picker" type="button" title="Blue (2)" aria-label="Blue (2)"></button>
+        <button id="color-picker-cyan" class="color-picker" type="button" title="Cyan (3)" aria-label="Cyan (3)"></button>
+        <button id="color-picker-green" class="color-picker" type="button" title="Green (4)" aria-label="Green (4)"></button>
+        <button id="color-picker-yellow" class="color-picker" type="button" title="Yellow (5)" aria-label="Yellow (5)"></button>
+        <button id="color-picker-orange" class="color-picker" type="button" title="Orange (6)" aria-label="Orange (6)"></button>
+        <button id="color-picker-red" class="color-picker" type="button" title="Red (7)" aria-label="Red (7)"></button>
+        <button id="color-picker-magenta" class="color-picker" type="button" title="Magenta (8)" aria-label="Magenta (8)"></button>
+        <button id="color-picker-purple" class="color-picker" type="button" title="Purple (9)" aria-label="Purple (9)"></button>
       </div>
     </div>
   `;
@@ -236,6 +236,27 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     "color-picker-red": "--red",
     "color-picker-magenta": "--magenta",
     "color-picker-purple": "--purple",
+  };
+  const toolShortcutByKey: Partial<Record<string, Tool>> = {
+    v: "select",
+    h: "pan",
+    p: "pen",
+    r: "rectangle",
+    o: "ellipse",
+    l: "line",
+    a: "arrow",
+    e: "eraser",
+  };
+  const colorButtonIdByShortcutDigit: Record<string, string> = {
+    "1": "color-picker-fg",
+    "2": "color-picker-blue",
+    "3": "color-picker-cyan",
+    "4": "color-picker-green",
+    "5": "color-picker-yellow",
+    "6": "color-picker-orange",
+    "7": "color-picker-red",
+    "8": "color-picker-magenta",
+    "9": "color-picker-purple",
   };
 
   function clampInputQuality(value: number) {
@@ -365,6 +386,17 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
   }
 
+  function setActiveTool(toolButtons: NodeListOf<HTMLButtonElement>, tool: Tool) {
+    selectedTool = tool;
+
+    if (isShapeTool(tool)) {
+      selectedShapeKind = tool;
+    }
+
+    setActiveToolButton(toolButtons, selectedTool);
+    updateCursor();
+  }
+
   function selectedVectorItems() {
     return selectedItems
       .map((target) => {
@@ -435,6 +467,27 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       item.baseWidth = normalizedWidth;
     }
 
+    return true;
+  }
+
+  function activateColor(buttonId: string, toolButtons: NodeListOf<HTMLButtonElement>) {
+    const cssVariable = colorVariableByButtonId[buttonId];
+
+    if (!cssVariable) {
+      return false;
+    }
+
+    strokeColor = readCssVariable(cssVariable);
+
+    if (selectedItems.length > 0) {
+      applySelectionColor(strokeColor);
+      redraw();
+    } else {
+      setActiveTool(toolButtons, "pen");
+    }
+
+    syncStyleControls();
+    updateCursor();
     return true;
   }
 
@@ -555,25 +608,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
       button.addEventListener("click", (event) => {
         event.stopPropagation();
-
-        const cssVariable = colorVariableByButtonId[button.id];
-
-        if (!cssVariable) {
-          return;
-        }
-
-        strokeColor = readCssVariable(cssVariable);
-
-        if (selectedItems.length > 0) {
-          applySelectionColor(strokeColor);
-          redraw();
-        } else {
-          selectedTool = "pen";
-          setActiveToolButton(toolButtons, selectedTool);
-        }
-
-        syncStyleControls();
-        updateCursor();
+        activateColor(button.id, toolButtons);
       });
     }
 
@@ -591,12 +626,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
           return;
         }
 
-        selectedTool = tool;
-        if (isShapeTool(tool)) {
-          selectedShapeKind = tool;
-        }
-        setActiveToolButton(toolButtons, selectedTool);
-        updateCursor();
+        setActiveTool(toolButtons, tool);
       });
     }
 
@@ -2707,6 +2737,8 @@ ${items}
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
+    const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
+
     if (event.code === "Space") {
       isSpaceDown = true;
       updateCursor();
@@ -2741,13 +2773,28 @@ ${items}
       });
     }
 
-    if (!event.ctrlKey && event.key.toLowerCase() === "c") {
-      strokes.length = 0;
-      shapes.length = 0;
-      images.length = 0;
-      pdfPages.length = 0;
-      setSelection([]);
-      redraw();
+    if (isEditableTarget(event.target)) {
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return;
+    }
+
+    const shortcutKey = event.key.toLowerCase();
+    const shortcutTool = toolShortcutByKey[shortcutKey];
+
+    if (shortcutTool) {
+      event.preventDefault();
+      setActiveTool(toolButtons, shortcutTool);
+      return;
+    }
+
+    const colorButtonId = colorButtonIdByShortcutDigit[shortcutKey];
+
+    if (colorButtonId) {
+      event.preventDefault();
+      activateColor(colorButtonId, toolButtons);
     }
   };
 
@@ -2774,6 +2821,19 @@ ${items}
   canvas.addEventListener("wheel", onWheel);
   canvas.addEventListener("contextmenu", onContextMenu);
   updateCursor();
+
+  function isEditableTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    if (target.isContentEditable) {
+      return true;
+    }
+
+    const editableAncestor = target.closest("input, textarea, select, [contenteditable='true']");
+    return Boolean(editableAncestor);
+  }
 
   function onPreferencesChanged(event: CustomEvent<{
     defaultStrokeWidth?: number;
