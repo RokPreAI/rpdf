@@ -148,11 +148,18 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         Left drag: draw/select | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
       </div>
 
-      <label class="stroke-width-control" for="stroke-width">
-        <span>Stroke width</span>
-        <input id="stroke-width" type="range" min="1" max="24" step="1" value="3" />
-        <output id="stroke-width-value">3px</output>
-      </label>
+      <div class="stroke-width-control">
+        <label class="stroke-control-field" for="stroke-width">
+          <span>Stroke width</span>
+          <input id="stroke-width" type="range" min="1" max="24" step="1" value="3" />
+          <output id="stroke-width-value">3px</output>
+        </label>
+        <label class="stroke-control-field" for="input-quality">
+          <span>Input quality</span>
+          <input id="input-quality" type="range" min="1" max="5" step="1" value="3" />
+          <output id="input-quality-value">3/5</output>
+        </label>
+      </div>
 
       <div class="canvas-pickers">
         <button class="tool-picker active" data-tool="pen" type="button" title="Pen" aria-label="Pen">✎</button>
@@ -216,6 +223,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let isSpaceDown = false;
   let devicePixelRatioValue = window.devicePixelRatio || 1;
   let baseStrokeWidth = preferences.defaultStrokeWidth;
+  let inputQuality = preferences.defaultInputQuality;
 
   const colorVariableByButtonId: Record<string, string> = {
     "color-picker-fg": "--fg",
@@ -228,6 +236,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     "color-picker-magenta": "--magenta",
     "color-picker-purple": "--purple",
   };
+
+  function clampInputQuality(value: number) {
+    if (!Number.isFinite(value)) {
+      return 3;
+    }
+
+    return clamp(Math.round(value), 1, 5);
+  }
 
   function isShapeTool(tool: Tool) {
     return tool === "rectangle" || tool === "ellipse" || tool === "line" || tool === "arrow";
@@ -246,6 +262,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     if (!rawValue) {
       return {
         defaultStrokeWidth: 3,
+        defaultInputQuality: 3,
         defaultShapeKind: "rectangle" as ShapeKind,
         defaultCanvasColor: fallbackColor,
       };
@@ -254,12 +271,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     try {
       const parsed = JSON.parse(rawValue) as Partial<{
         defaultStrokeWidth: number;
+        defaultInputQuality: number;
         defaultShapeKind: ShapeKind;
         defaultCanvasColor: string;
       }>;
 
       return {
         defaultStrokeWidth: typeof parsed.defaultStrokeWidth === "number" ? parsed.defaultStrokeWidth : 3,
+        defaultInputQuality: clampInputQuality(parsed.defaultInputQuality ?? 3),
         defaultShapeKind: parsed.defaultShapeKind ?? "rectangle",
         defaultCanvasColor: parsed.defaultCanvasColor ?? fallbackColor,
       };
@@ -267,10 +286,26 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       console.error("Could not parse canvas preferences:", error);
       return {
         defaultStrokeWidth: 3,
+        defaultInputQuality: 3,
         defaultShapeKind: "rectangle" as ShapeKind,
         defaultCanvasColor: fallbackColor,
       };
     }
+  }
+
+  function writePreferences(update: Partial<{
+    defaultStrokeWidth: number;
+    defaultInputQuality: number;
+    defaultShapeKind: ShapeKind;
+    defaultCanvasColor: string;
+  }>) {
+    const nextPreferences = {
+      ...readPreferences(),
+      ...update,
+      defaultInputQuality: clampInputQuality(update.defaultInputQuality ?? readPreferences().defaultInputQuality),
+    };
+
+    window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(nextPreferences));
   }
 
   function getCanvasSize() {
@@ -429,11 +464,88 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
   }
 
+  function inputQualityLabel(value: number) {
+    return `${clampInputQuality(value)}/5`;
+  }
+
+  function syncInputQualityControl() {
+    const inputQualityInput = container.querySelector<HTMLInputElement>("#input-quality");
+    const inputQualityValue = container.querySelector<HTMLOutputElement>("#input-quality-value");
+
+    if (inputQualityInput && inputQualityValue) {
+      inputQualityInput.value = String(clampInputQuality(inputQuality));
+      inputQualityValue.textContent = inputQualityLabel(inputQuality);
+    }
+  }
+
+  function strokeSampleSpacing() {
+    return (
+      inputQuality >= 5 ? 1.5
+        : inputQuality === 4 ? 2.5
+          : inputQuality === 3 ? 4
+            : inputQuality === 2 ? 6
+              : 8
+    ) / camera.scale;
+  }
+
+  function appendPointToCurrentStroke(point: Point, pressure: number) {
+    if (!currentStroke) {
+      return;
+    }
+
+    const lastPoint = currentStroke.points[currentStroke.points.length - 1];
+
+    if (!lastPoint) {
+      currentStroke.points.push({
+        ...point,
+        pressure,
+      });
+      return;
+    }
+
+    const deltaX = point.x - lastPoint.x;
+    const deltaY = point.y - lastPoint.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    const sampleSpacing = strokeSampleSpacing();
+
+    if (distance < sampleSpacing * 0.45) {
+      currentStroke.points[currentStroke.points.length - 1] = {
+        ...point,
+        pressure,
+      };
+      return;
+    }
+
+    const stepCount = Math.max(1, Math.ceil(distance / sampleSpacing));
+
+    for (let stepIndex = 1; stepIndex <= stepCount; stepIndex += 1) {
+      const ratio = stepIndex / stepCount;
+
+      currentStroke.points.push({
+        x: lastPoint.x + deltaX * ratio,
+        y: lastPoint.y + deltaY * ratio,
+        pressure: lastPoint.pressure + (pressure - lastPoint.pressure) * ratio,
+      });
+    }
+  }
+
+  function pointerSamples(event: PointerEvent) {
+    if (inputQuality < 3 || typeof event.getCoalescedEvents !== "function") {
+      return [event];
+    }
+
+    const coalescedEvents = event.getCoalescedEvents();
+
+    return coalescedEvents.length > 0 ? coalescedEvents : [event];
+  }
+
   function setupPickers() {
     const colorButtons = container.querySelectorAll<HTMLButtonElement>(".color-picker");
     const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
     const strokeWidthInput = requireElement<HTMLInputElement>(container, "#stroke-width");
     const strokeWidthValue = requireElement<HTMLOutputElement>(container, "#stroke-width-value");
+    const inputQualityInput = requireElement<HTMLInputElement>(container, "#input-quality");
+    const inputQualityValue = requireElement<HTMLOutputElement>(container, "#input-quality-value");
 
     for (const button of colorButtons) {
       button.addEventListener("pointerdown", (event) => {
@@ -489,12 +601,18 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     strokeWidthInput.value = String(baseStrokeWidth);
     strokeWidthValue.textContent = `${baseStrokeWidth}px`;
+    inputQualityInput.value = String(inputQuality);
+    inputQualityValue.textContent = inputQualityLabel(inputQuality);
     setActiveToolButton(toolButtons, selectedTool);
     syncStyleControls();
+    syncInputQualityControl();
     updateCursor();
 
     strokeWidthInput.addEventListener("input", () => {
       baseStrokeWidth = Math.max(1, Number(strokeWidthInput.value));
+      writePreferences({
+        defaultStrokeWidth: baseStrokeWidth,
+      });
 
       if (selectedItems.length > 0) {
         applySelectionStrokeWidth(baseStrokeWidth);
@@ -502,6 +620,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       }
 
       syncStyleControls();
+    });
+
+    inputQualityInput.addEventListener("input", () => {
+      inputQuality = clampInputQuality(Number(inputQualityInput.value));
+      writePreferences({
+        defaultInputQuality: inputQuality,
+      });
+      syncInputQualityControl();
     });
 
   }
@@ -2429,7 +2555,6 @@ ${items}
     }
 
     const point = screenToWorld(event.clientX, event.clientY);
-    const pressure = getPointerPressure(event);
 
     if (selectedTool === "eraser") {
       if (event.buttons === 1) {
@@ -2485,10 +2610,13 @@ ${items}
       return;
     }
 
-    currentStroke.points.push({
-      ...point,
-      pressure,
-    });
+    for (const sample of pointerSamples(event)) {
+      appendPointToCurrentStroke(
+        screenToWorld(sample.clientX, sample.clientY),
+        getPointerPressure(sample),
+      );
+    }
+
     redraw();
   };
 
@@ -2629,11 +2757,16 @@ ${items}
 
   function onPreferencesChanged(event: CustomEvent<{
     defaultStrokeWidth?: number;
+    defaultInputQuality?: number;
     defaultShapeKind?: ShapeKind;
     defaultCanvasColor?: string;
   }>) {
     if (typeof event.detail.defaultStrokeWidth === "number") {
       baseStrokeWidth = event.detail.defaultStrokeWidth;
+    }
+
+    if (typeof event.detail.defaultInputQuality === "number") {
+      inputQuality = clampInputQuality(event.detail.defaultInputQuality);
     }
 
     if (event.detail.defaultShapeKind === "rectangle" || event.detail.defaultShapeKind === "ellipse" || event.detail.defaultShapeKind === "line" || event.detail.defaultShapeKind === "arrow") {
@@ -2651,6 +2784,7 @@ ${items}
     }
 
     syncStyleControls();
+    syncInputQualityControl();
   }
 
   function toCanvasBackgroundPattern(pattern: BackgroundPattern): CanvasBackgroundPattern {

@@ -276,12 +276,17 @@ button {
   left: 12px;
   top: 12px;
   display: grid;
-  gap: 6px;
+  gap: 8px;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--bg-panel);
   color: white;
   font-size: 12px;
+}
+
+.stroke-control-field {
+  display: grid;
+  gap: 6px;
 }
 
 .stroke-width-control input {

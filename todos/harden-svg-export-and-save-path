@@ -1,6 +1,6 @@
 Priority: 2
 Area: Export
-Status: pending
+Status: current
 Depends on: add-svg-export-eligibility, fix-select-tool
 
 Goal:
@@ -24,4 +24,3 @@ Acceptance criteria:
 Notes:
 
 - Keep this task scoped to SVG export reliability and destination control, not a full generic export framework.
-
