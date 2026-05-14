@@ -5,6 +5,7 @@ import type {
   CanvasDocument,
   CanvasImagePlacementDocument,
   CanvasPdfPagePlacementDocument,
+  CanvasSelectionTargetDocument,
   CanvasSelectionDocument,
   PdfRecolorSettingsDocument,
   CanvasShapeDocument,
@@ -113,6 +114,11 @@ type ResizeSession = {
   handle: ResizeHandle;
   target: SelectionTarget;
   originalBounds: Bounds;
+  pointerOffset: Point;
+  originalShapePoints?: {
+    start: Point;
+    end: Point;
+  };
 };
 
 type Tool = "pen" | "rectangle" | "ellipse" | "line" | "arrow" | "select" | "pan" | "eraser";
@@ -125,7 +131,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <canvas class="canvas-surface"></canvas>
 
       <div class="canvas-toolbar">
-        Left drag: draw/select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
+        Left drag: draw/select | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo | C: clear
       </div>
 
       <label class="stroke-width-control" for="stroke-width">
@@ -187,7 +193,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let strokeColor = preferences.defaultCanvasColor;
   let currentStroke: Stroke | null = null;
   let currentShape: Shape | null = null;
-  let selectedItem: SelectionTarget | null = null;
+  let selectedItems: SelectionTarget[] = [];
   let moveAnchorPoint: Point | null = null;
   let activeResizeHandle: ResizeHandle | null = null;
   let resizeSession: ResizeSession | null = null;
@@ -294,7 +300,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         return;
       }
 
-      canvas.style.cursor = selectedItem ? "move" : "default";
+      canvas.style.cursor = selectedItems.length > 0 ? "move" : "default";
     } else if (selectedTool === "pan") {
       canvas.style.cursor = "grab";
     } else {
@@ -704,6 +710,31 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }) : null;
   }
 
+  function unionBounds(boundsList: Bounds[]) {
+    return normalizeBounds({
+      minX: Math.min(...boundsList.map((bounds) => bounds.minX)),
+      minY: Math.min(...boundsList.map((bounds) => bounds.minY)),
+      maxX: Math.max(...boundsList.map((bounds) => bounds.maxX)),
+      maxY: Math.max(...boundsList.map((bounds) => bounds.maxY)),
+    });
+  }
+
+  function currentPrimarySelection() {
+    return selectedItems.length === 1 ? selectedItems[0] : null;
+  }
+
+  function currentSelectionBounds() {
+    const boundsList = selectedItems
+      .map((target) => targetBounds(target))
+      .filter((bounds): bounds is Bounds => Boolean(bounds));
+
+    if (boundsList.length === 0) {
+      return null;
+    }
+
+    return unionBounds(boundsList);
+  }
+
   function isResizableTarget(target: SelectionTarget | null) {
     return target?.kind === "shape" || target?.kind === "image" || target?.kind === "pdf_page";
   }
@@ -717,12 +748,18 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     } satisfies Record<ResizeHandle, Point>;
   }
 
+  function handlePoint(bounds: Bounds, handle: ResizeHandle) {
+    return resizeHandlePositions(bounds)[handle];
+  }
+
   function hitTestResizeHandle(point: Point) {
-    if (!selectedItem || !isResizableTarget(selectedItem)) {
+    const selection = currentPrimarySelection();
+
+    if (!selection || !isResizableTarget(selection)) {
       return null;
     }
 
-    const bounds = targetBounds(selectedItem);
+    const bounds = targetBounds(selection);
 
     if (!bounds) {
       return null;
@@ -741,7 +778,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function drawSelectionOverlay() {
-    if (!selectedItem) {
+    if (selectedItems.length === 0) {
       return;
     }
 
@@ -752,39 +789,43 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.lineWidth = 2 / camera.scale;
     ctx.strokeStyle = readCssVariable("--yellow") || "#e0af68";
 
-    if (selectedItem.kind === "image") {
-      const image = images[selectedItem.index];
+    for (const target of selectedItems) {
+      const bounds = targetBounds(target);
 
-      if (image) {
-        ctx.strokeRect(image.x, image.y, image.width, image.height);
+      if (!bounds) {
+        continue;
       }
-    } else if (selectedItem.kind === "pdf_page") {
-      const pdfPage = pdfPages[selectedItem.index];
 
-      if (pdfPage) {
-        ctx.strokeRect(pdfPage.x, pdfPage.y, pdfPage.width, pdfPage.height);
-      }
-    } else if (selectedItem.kind === "shape") {
-      const shape = shapes[selectedItem.index];
+      ctx.strokeRect(
+        bounds.minX,
+        bounds.minY,
+        Math.max(1, bounds.maxX - bounds.minX),
+        Math.max(1, bounds.maxY - bounds.minY),
+      );
+    }
 
-      if (shape) {
-        const bounds = shapeBounds(shape);
-        ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
-      }
-    } else {
-      const stroke = strokes[selectedItem.index];
+    if (selectedItems.length > 1) {
+      const groupedBounds = currentSelectionBounds();
 
-      if (stroke) {
-        const bounds = getStrokeBounds(stroke);
-
-        if (bounds) {
-          ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
-        }
+      if (groupedBounds) {
+        ctx.save();
+        ctx.setLineDash([18 / camera.scale, 12 / camera.scale]);
+        ctx.lineWidth = 3 / camera.scale;
+        ctx.strokeStyle = readCssVariable("--orange") || "#ff9e64";
+        ctx.strokeRect(
+          groupedBounds.minX,
+          groupedBounds.minY,
+          Math.max(1, groupedBounds.maxX - groupedBounds.minX),
+          Math.max(1, groupedBounds.maxY - groupedBounds.minY),
+        );
+        ctx.restore();
       }
     }
 
-    if (isResizableTarget(selectedItem)) {
-      const bounds = targetBounds(selectedItem);
+    const primarySelection = currentPrimarySelection();
+
+    if (isResizableTarget(primarySelection)) {
+      const bounds = primarySelection ? targetBounds(primarySelection) : null;
 
       if (bounds) {
         const handleSize = Math.max(10 / camera.scale, 8);
@@ -807,47 +848,60 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function currentSvgExportState() {
-    if (selectedItem?.kind === "image") {
+    if (selectedItems.length > 0) {
+      const vectors: VectorItem[] = [];
+
+      for (const target of selectedItems) {
+        if (target.kind === "image") {
+          return {
+            eligible: false,
+            message: "SVG export is disabled for raster image selections.",
+            vectors: [] as VectorItem[],
+          };
+        }
+
+        if (target.kind === "pdf_page") {
+          return {
+            eligible: false,
+            message: "SVG export is disabled for imported PDF page selections.",
+            vectors: [] as VectorItem[],
+          };
+        }
+
+        if (target.kind === "stroke") {
+          const stroke = strokes[target.index];
+
+          if (!stroke) {
+            return {
+              eligible: false,
+              message: "A selected stroke is no longer available.",
+              vectors: [] as VectorItem[],
+            };
+          }
+
+          vectors.push(stroke);
+          continue;
+        }
+
+        const shape = shapes[target.index];
+
+        if (!shape) {
+          return {
+            eligible: false,
+            message: "A selected shape is no longer available.",
+            vectors: [] as VectorItem[],
+          };
+        }
+
+        vectors.push(shape);
+      }
+
       return {
-        eligible: false,
-        message: "SVG export is disabled for raster image selections.",
-        vectors: [] as VectorItem[],
-      };
-    }
-
-    if (selectedItem?.kind === "pdf_page") {
-      return {
-        eligible: false,
-        message: "SVG export is disabled for imported PDF page selections.",
-        vectors: [] as VectorItem[],
-      };
-    }
-
-    if (selectedItem?.kind === "stroke") {
-      const stroke = strokes[selectedItem.index];
-
-      return stroke ? {
-        eligible: true,
-        message: "SVG export will include the selected stroke only.",
-        vectors: [stroke] as VectorItem[],
-      } : {
-        eligible: false,
-        message: "Selected stroke is no longer available.",
-        vectors: [] as VectorItem[],
-      };
-    }
-
-    if (selectedItem?.kind === "shape") {
-      const shape = shapes[selectedItem.index];
-
-      return shape ? {
-        eligible: true,
-        message: "SVG export will include the selected shape only.",
-        vectors: [shape] as VectorItem[],
-      } : {
-        eligible: false,
-        message: "Selected shape is no longer available.",
-        vectors: [] as VectorItem[],
+        eligible: vectors.length > 0,
+        message: vectors.length === 1
+          ? "SVG export will include the selected vector item only."
+          : "SVG export will include the selected vector items only.",
+        vectors,
       };
     }
 
@@ -1151,7 +1205,7 @@ ${items}
     const anchor = document.createElement("a");
 
     anchor.href = downloadUrl;
-    anchor.download = selectedItem ? "canvas-selection.svg" : "canvas-document.svg";
+    anchor.download = selectedItems.length > 0 ? "canvas-selection.svg" : "canvas-document.svg";
     anchor.click();
     URL.revokeObjectURL(downloadUrl);
   }
@@ -1171,7 +1225,7 @@ ${items}
       .filter((target) => target.index >= 0);
   }
 
-  function selectedItemId(target: SelectionTarget): string | null {
+  function selectedTargetId(target: SelectionTarget): string | null {
     if (target.kind === "image") {
       return images[target.index]?.id ?? null;
     }
@@ -1187,28 +1241,97 @@ ${items}
     return strokes[target.index]?.id ?? null;
   }
 
+  function selectionTargetKey(target: SelectionTarget) {
+    const id = selectedTargetId(target);
+    return id ? `${target.kind}:${id}` : null;
+  }
+
+  function selectedKeySet() {
+    const keys = new Set<string>();
+
+    for (const target of selectedItems) {
+      const key = selectionTargetKey(target);
+
+      if (key) {
+        keys.add(key);
+      }
+    }
+
+    return keys;
+  }
+
+  function selectionContains(target: SelectionTarget) {
+    const key = selectionTargetKey(target);
+    return key ? selectedKeySet().has(key) : false;
+  }
+
+  function setSelection(targets: SelectionTarget[]) {
+    const uniqueTargets: SelectionTarget[] = [];
+    const seen = new Set<string>();
+
+    for (const target of targets) {
+      const key = selectionTargetKey(target);
+
+      if (!key || seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      uniqueTargets.push(target);
+    }
+
+    selectedItems = uniqueTargets;
+  }
+
+  function toggleSelectionTarget(target: SelectionTarget) {
+    const targetKey = selectionTargetKey(target);
+
+    if (!targetKey) {
+      return;
+    }
+
+    if (selectedKeySet().has(targetKey)) {
+      setSelection(selectedItems.filter((entry) => selectionTargetKey(entry) !== targetKey));
+      return;
+    }
+
+    setSelection([...selectedItems, target]);
+  }
+
+  function selectionKeyMatches(target: SelectionTarget, key: string | null) {
+    return key !== null && selectionTargetKey(target) === key;
+  }
+
   function currentSelectionSnapshot(): CanvasSelectionDocument | null {
-    if (!selectedItem) {
+    if (selectedItems.length === 0) {
       return null;
     }
 
-    const id = selectedItemId(selectedItem);
+    const targets = selectedItems
+      .map((target) => {
+        const id = selectedTargetId(target);
 
-    if (!id) {
+        if (!id) {
+          return null;
+        }
+
+        return {
+          kind: target.kind,
+          id,
+        } satisfies CanvasSelectionTargetDocument;
+      })
+      .filter((target): target is CanvasSelectionTargetDocument => Boolean(target));
+
+    if (targets.length === 0) {
       return null;
     }
 
     return {
-      kind: selectedItem.kind,
-      id,
+      targets,
     };
   }
 
-  function resolveSelection(selection: CanvasSelectionDocument | null | undefined): SelectionTarget | null {
-    if (!selection) {
-      return null;
-    }
-
+  function resolveSelectionTarget(selection: CanvasSelectionTargetDocument): SelectionTarget | null {
     if (selection.kind === "image") {
       const index = images.findIndex((image) => image.id === selection.id);
       return index >= 0 ? { kind: "image", index } : null;
@@ -1228,8 +1351,23 @@ ${items}
     return index >= 0 ? { kind: "stroke", index } : null;
   }
 
+  function resolveSelection(selection: CanvasSelectionDocument | null | undefined): SelectionTarget[] {
+    if (!selection) {
+      return [];
+    }
+
+    if ("targets" in selection) {
+      return selection.targets
+        .map((target) => resolveSelectionTarget(target))
+        .filter((target): target is SelectionTarget => Boolean(target));
+    }
+
+    const target = resolveSelectionTarget(selection);
+    return target ? [target] : [];
+  }
+
   function normalizeSelection() {
-    selectedItem = resolveSelection(currentSelectionSnapshot());
+    setSelection(resolveSelection(currentSelectionSnapshot()));
   }
 
   function hitTestSelection(point: Point): SelectionTarget | null {
@@ -1310,58 +1448,60 @@ ${items}
     return null;
   }
 
-  function moveSelectedItem(deltaX: number, deltaY: number) {
-    if (!selectedItem) {
+  function moveSelectedItems(deltaX: number, deltaY: number) {
+    if (selectedItems.length === 0) {
       return;
     }
 
-    if (selectedItem.kind === "image") {
-      const image = images[selectedItem.index];
+    for (const target of selectedItems) {
+      if (target.kind === "image") {
+        const image = images[target.index];
 
-      if (!image) {
-        return;
+        if (!image) {
+          continue;
+        }
+
+        image.x += deltaX;
+        image.y += deltaY;
+        continue;
       }
 
-      image.x += deltaX;
-      image.y += deltaY;
-      return;
-    }
+      if (target.kind === "pdf_page") {
+        const pdfPage = pdfPages[target.index];
 
-    if (selectedItem.kind === "pdf_page") {
-      const pdfPage = pdfPages[selectedItem.index];
+        if (!pdfPage) {
+          continue;
+        }
 
-      if (!pdfPage) {
-        return;
+        pdfPage.x += deltaX;
+        pdfPage.y += deltaY;
+        continue;
       }
 
-      pdfPage.x += deltaX;
-      pdfPage.y += deltaY;
-      return;
-    }
+      if (target.kind === "shape") {
+        const shape = shapes[target.index];
 
-    if (selectedItem.kind === "shape") {
-      const shape = shapes[selectedItem.index];
+        if (!shape) {
+          continue;
+        }
 
-      if (!shape) {
-        return;
+        shape.start.x += deltaX;
+        shape.start.y += deltaY;
+        shape.end.x += deltaX;
+        shape.end.y += deltaY;
+        continue;
       }
 
-      shape.start.x += deltaX;
-      shape.start.y += deltaY;
-      shape.end.x += deltaX;
-      shape.end.y += deltaY;
-      return;
-    }
+      const stroke = strokes[target.index];
 
-    const stroke = strokes[selectedItem.index];
+      if (!stroke) {
+        continue;
+      }
 
-    if (!stroke) {
-      return;
-    }
-
-    for (const point of stroke.points) {
-      point.x += deltaX;
-      point.y += deltaY;
+      for (const point of stroke.points) {
+        point.x += deltaX;
+        point.y += deltaY;
+      }
     }
   }
 
@@ -1379,7 +1519,20 @@ ${items}
     };
   }
 
-  function applyResize(target: SelectionTarget, originalBounds: Bounds, handle: ResizeHandle, point: Point) {
+  function safeCoordinate(value: number, fallback: number) {
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  function safeSpan(value: number, minimumSize: number) {
+    if (!Number.isFinite(value)) {
+      return minimumSize;
+    }
+
+    return Math.max(minimumSize, Math.abs(value));
+  }
+
+  function applyResize(session: ResizeSession, point: Point) {
+    const { target, originalBounds, handle } = session;
     const minimumSize = Math.max(12 / camera.scale, 6);
     const fixedCorner = handle === "nw"
       ? { x: originalBounds.maxX, y: originalBounds.maxY }
@@ -1388,16 +1541,42 @@ ${items}
         : handle === "se"
           ? { x: originalBounds.minX, y: originalBounds.minY }
           : { x: originalBounds.maxX, y: originalBounds.minY };
-    const widthSign = point.x >= fixedCorner.x ? 1 : -1;
-    const heightSign = point.y >= fixedCorner.y ? 1 : -1;
-    const width = Math.max(minimumSize, Math.abs(point.x - fixedCorner.x));
-    const height = Math.max(minimumSize, Math.abs(point.y - fixedCorner.y));
-    const nextBounds = normalizeBounds({
-      minX: fixedCorner.x,
-      minY: fixedCorner.y,
-      maxX: fixedCorner.x + width * widthSign,
-      maxY: fixedCorner.y + height * heightSign,
-    });
+    const pointerX = safeCoordinate(point.x, fixedCorner.x);
+    const pointerY = safeCoordinate(point.y, fixedCorner.y);
+    const rawBounds = handle === "nw"
+      ? {
+        minX: pointerX,
+        minY: pointerY,
+        maxX: fixedCorner.x,
+        maxY: fixedCorner.y,
+      }
+      : handle === "ne"
+        ? {
+          minX: fixedCorner.x,
+          minY: pointerY,
+          maxX: pointerX,
+          maxY: fixedCorner.y,
+        }
+        : handle === "se"
+          ? {
+            minX: fixedCorner.x,
+            minY: fixedCorner.y,
+            maxX: pointerX,
+            maxY: pointerY,
+          }
+          : {
+            minX: pointerX,
+            minY: fixedCorner.y,
+            maxX: fixedCorner.x,
+            maxY: pointerY,
+          };
+    const normalizedBounds = normalizeBounds(rawBounds);
+    const nextBounds = {
+      minX: normalizedBounds.minX,
+      minY: normalizedBounds.minY,
+      maxX: normalizedBounds.minX + safeSpan(normalizedBounds.maxX - normalizedBounds.minX, minimumSize),
+      maxY: normalizedBounds.minY + safeSpan(normalizedBounds.maxY - normalizedBounds.minY, minimumSize),
+    } satisfies Bounds;
 
     if (target.kind === "image") {
       const image = images[target.index];
@@ -1437,8 +1616,13 @@ ${items}
       return;
     }
 
-    shape.start = remapPointBetweenBounds(shape.start, originalBounds, nextBounds);
-    shape.end = remapPointBetweenBounds(shape.end, originalBounds, nextBounds);
+    const originalShapePoints = session.originalShapePoints ?? {
+      start: { ...shape.start },
+      end: { ...shape.end },
+    };
+
+    shape.start = remapPointBetweenBounds(originalShapePoints.start, originalBounds, nextBounds);
+    shape.end = remapPointBetweenBounds(originalShapePoints.end, originalBounds, nextBounds);
   }
 
   function addLoadedImage(image: HTMLImageElement, id: string, assetPath: string) {
@@ -1486,10 +1670,10 @@ ${items}
       recolor: payload.recolor,
     });
 
-    selectedItem = {
+    setSelection([{
       kind: "pdf_page",
       index: pdfPages.length - 1,
-    };
+    }]);
     redraw();
   }
 
@@ -1810,22 +1994,38 @@ ${items}
 
     if (selectedTool === "eraser") {
       eraseAtPoint(point);
-      selectedItem = null;
+      setSelection([]);
       redraw();
       return;
     }
 
     if (selectedTool === "select") {
+      const additiveSelection = event.shiftKey || event.ctrlKey || event.metaKey;
       const resizeHandle = hitTestResizeHandle(point);
+      const pointerSelection = hitTestSelection(point);
+      const pointerSelectionKey = pointerSelection ? selectionTargetKey(pointerSelection) : null;
+      const clickedSelectedTarget = pointerSelection
+        ? selectedItems.find((target) => selectionKeyMatches(target, pointerSelectionKey)) ?? null
+        : null;
 
-      if (selectedItem && resizeHandle) {
-        const originalBounds = targetBounds(selectedItem);
+      if (clickedSelectedTarget && resizeHandle) {
+        const originalBounds = targetBounds(clickedSelectedTarget);
 
         if (originalBounds) {
+          const handlePosition = handlePoint(originalBounds, resizeHandle);
+          const shape = clickedSelectedTarget.kind === "shape" ? shapes[clickedSelectedTarget.index] : null;
           resizeSession = {
             handle: resizeHandle,
-            target: selectedItem,
+            target: clickedSelectedTarget,
             originalBounds,
+            pointerOffset: {
+              x: handlePosition.x - point.x,
+              y: handlePosition.y - point.y,
+            },
+            originalShapePoints: shape ? {
+              start: { ...shape.start },
+              end: { ...shape.end },
+            } : undefined,
           };
           activeResizeHandle = resizeHandle;
           moveAnchorPoint = null;
@@ -1836,9 +2036,18 @@ ${items}
         }
       }
 
-      selectedItem = hitTestSelection(point);
+      if (pointerSelection) {
+        if (additiveSelection) {
+          toggleSelectionTarget(pointerSelection);
+        } else if (!selectionContains(pointerSelection)) {
+          setSelection([pointerSelection]);
+        }
+      } else if (!additiveSelection) {
+        setSelection([]);
+      }
+
       activeResizeHandle = hitTestResizeHandle(point);
-      moveAnchorPoint = selectedItem ? point : null;
+      moveAnchorPoint = pointerSelection && selectionContains(pointerSelection) ? point : null;
       canvas.setPointerCapture(event.pointerId);
       updateCursor();
       redraw();
@@ -1875,7 +2084,7 @@ ${items}
     if (selectedTool === "eraser") {
       if (event.buttons === 1) {
         eraseAtPoint(point);
-        selectedItem = null;
+        setSelection([]);
         redraw();
       }
 
@@ -1886,19 +2095,25 @@ ${items}
       activeResizeHandle = hitTestResizeHandle(point);
 
       if (resizeSession && (event.buttons & 1) !== 0) {
-        applyResize(resizeSession.target, resizeSession.originalBounds, resizeSession.handle, point);
+        applyResize(
+          resizeSession,
+          {
+            x: point.x + resizeSession.pointerOffset.x,
+            y: point.y + resizeSession.pointerOffset.y,
+          },
+        );
         redraw();
         return;
       }
 
-      if (!selectedItem || !moveAnchorPoint || (event.buttons & 1) === 0) {
+      if (selectedItems.length === 0 || !moveAnchorPoint || (event.buttons & 1) === 0) {
         updateCursor();
         return;
       }
 
       const deltaX = point.x - moveAnchorPoint.x;
       const deltaY = point.y - moveAnchorPoint.y;
-      moveSelectedItem(deltaX, deltaY);
+      moveSelectedItems(deltaX, deltaY);
       moveAnchorPoint = point;
       redraw();
       return;
@@ -1977,10 +2192,14 @@ ${items}
       removeLastVectorItem();
 
       if (
-        (selectedItem?.kind === "stroke" && selectedItem.index >= strokes.length)
-        || (selectedItem?.kind === "shape" && selectedItem.index >= shapes.length)
+        selectedItems.some((target) => (
+          (target.kind === "stroke" && target.index >= strokes.length)
+          || (target.kind === "shape" && target.index >= shapes.length)
+          || (target.kind === "image" && target.index >= images.length)
+          || (target.kind === "pdf_page" && target.index >= pdfPages.length)
+        ))
       ) {
-        selectedItem = null;
+        setSelection([]);
       }
 
       redraw();
@@ -2001,7 +2220,7 @@ ${items}
       shapes.length = 0;
       images.length = 0;
       pdfPages.length = 0;
-      selectedItem = null;
+      setSelection([]);
       redraw();
     }
   };
@@ -2194,7 +2413,7 @@ ${items}
       }
 
       documentId = snapshot.document.id;
-      selectedItem = null;
+      setSelection([]);
       moveAnchorPoint = null;
       strokes.length = 0;
       shapes.length = 0;
@@ -2240,7 +2459,7 @@ ${items}
 
       await importImages(snapshot.document.images);
       await importPdfPages(snapshot.document.pdfPages ?? []);
-      selectedItem = resolveSelection(snapshot.selection);
+      setSelection(resolveSelection(snapshot.selection));
       redraw();
     },
     destroy() {

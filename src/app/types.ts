@@ -90,10 +90,16 @@ export type CanvasDocument = {
   pdfPages: CanvasPdfPagePlacementDocument[];
 };
 
-export type CanvasSelectionDocument = {
+export type CanvasSelectionTargetDocument = {
   kind: "stroke" | "shape" | "image" | "pdf_page";
   id: string;
 };
+
+export type CanvasSelectionDocument =
+  | {
+    targets: CanvasSelectionTargetDocument[];
+  }
+  | CanvasSelectionTargetDocument;
 
 export type OpenPdfDocumentRequest = {
   documentPath: string;
