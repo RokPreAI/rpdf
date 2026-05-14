@@ -502,7 +502,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       const segmentPressure = (previousPoint.pressure + currentPoint.pressure) / 2;
 
       ctx.beginPath();
-      ctx.lineWidth = calculateRenderedStrokeWidth(stroke.baseWidth, segmentPressure) / camera.scale;
+      ctx.lineWidth = calculateRenderedStrokeWidth(stroke.baseWidth, segmentPressure);
       ctx.moveTo(previousPoint.x, previousPoint.y);
       ctx.lineTo(currentPoint.x, currentPoint.y);
       ctx.stroke();
@@ -570,7 +570,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.translate(camera.x, camera.y);
     ctx.scale(camera.scale, camera.scale);
     ctx.strokeStyle = shape.color;
-    ctx.lineWidth = shape.baseWidth / camera.scale;
+    ctx.lineWidth = shape.baseWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath();
