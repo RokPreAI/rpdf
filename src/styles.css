@@ -649,7 +649,7 @@ button {
 
 .pdf-stage-shell {
   position: relative;
-  min-height: 0;
+  min-height: clamp(320px, 58vh, 820px);
   border: 1px solid rgba(192, 202, 245, 0.08);
   border-radius: var(--large-radius);
   background:
@@ -677,6 +677,14 @@ button {
   min-height: 0;
 }
 
+.pdf-page-frame {
+  position: absolute;
+  overflow: hidden;
+  border-radius: calc(var(--medium-radius) + 2px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  background: rgba(12, 14, 20, 0.68);
+}
+
 .pdf-page-image,
 .pdf-annotation-layer {
   position: absolute;
@@ -686,7 +694,8 @@ button {
 }
 
 .pdf-page-image {
-  object-fit: contain;
+  display: block;
+  object-fit: fill;
 }
 
 .pdf-annotation-layer {

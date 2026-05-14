@@ -47,6 +47,8 @@ type PdfWorkspaceState = {
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
 const RECENT_PDF_PATHS_STORAGE_KEY = "rpdf.recent-pdf-paths.v1";
 const MAX_RECENT_PDF_PATHS = 5;
+const DEFAULT_PAGE_FRAME_WIDTH = 1200;
+const DEFAULT_PAGE_FRAME_HEIGHT = 1600;
 
 export function mountPdfWorkspace(
   container: HTMLElement,
@@ -160,8 +162,10 @@ export function mountPdfWorkspace(
               Enter a PDF path and open it to create a reading-focused workspace.
             </div>
             <div id="pdf-stage" class="pdf-stage" hidden>
-              <img id="pdf-page-image" class="pdf-page-image" alt="Rendered PDF page" hidden />
-              <canvas id="pdf-annotation-layer" class="pdf-annotation-layer"></canvas>
+              <div id="pdf-page-frame" class="pdf-page-frame" hidden>
+                <img id="pdf-page-image" class="pdf-page-image" alt="Rendered PDF page" hidden />
+                <canvas id="pdf-annotation-layer" class="pdf-annotation-layer"></canvas>
+              </div>
               <div id="pdf-render-placeholder" class="pdf-render-placeholder">
                 The PDF engine boundary is connected, but page rendering is not configured on this machine yet.
               </div>
@@ -226,6 +230,7 @@ export function mountPdfWorkspace(
   const stageShell = requireElement<HTMLElement>(container, "#pdf-stage-shell");
   const stageEmpty = requireElement<HTMLElement>(container, "#pdf-stage-empty");
   const stage = requireElement<HTMLElement>(container, "#pdf-stage");
+  const pageFrame = requireElement<HTMLElement>(container, "#pdf-page-frame");
   const pageImage = requireElement<HTMLImageElement>(container, "#pdf-page-image");
   const annotationLayer = requireElement<HTMLCanvasElement>(container, "#pdf-annotation-layer");
   const renderPlaceholder = requireElement<HTMLElement>(container, "#pdf-render-placeholder");
@@ -414,12 +419,11 @@ export function mountPdfWorkspace(
 
   function currentAnnotationBounds() {
     const stageRect = stage.getBoundingClientRect();
+    const sourceWidth = pageImage.naturalWidth || state.pageRender?.width || DEFAULT_PAGE_FRAME_WIDTH;
+    const sourceHeight = pageImage.naturalHeight || state.pageRender?.height || DEFAULT_PAGE_FRAME_HEIGHT;
 
     if (
-      pageImage.hidden
-      || pageImage.naturalWidth <= 0
-      || pageImage.naturalHeight <= 0
-      || stageRect.width <= 0
+      stageRect.width <= 0
       || stageRect.height <= 0
     ) {
       return {
@@ -431,11 +435,11 @@ export function mountPdfWorkspace(
     }
 
     const scale = Math.min(
-      stageRect.width / pageImage.naturalWidth,
-      stageRect.height / pageImage.naturalHeight,
+      stageRect.width / sourceWidth,
+      stageRect.height / sourceHeight,
     );
-    const width = pageImage.naturalWidth * scale;
-    const height = pageImage.naturalHeight * scale;
+    const width = sourceWidth * scale;
+    const height = sourceHeight * scale;
 
     return {
       width,
@@ -449,13 +453,14 @@ export function mountPdfWorkspace(
     const bounds = currentAnnotationBounds();
     const scale = window.devicePixelRatio || 1;
 
+    pageFrame.style.left = `${bounds.offsetLeft}px`;
+    pageFrame.style.top = `${bounds.offsetTop}px`;
+    pageFrame.style.width = `${bounds.width}px`;
+    pageFrame.style.height = `${bounds.height}px`;
     annotationLayer.width = Math.max(1, Math.floor(bounds.width * scale));
     annotationLayer.height = Math.max(1, Math.floor(bounds.height * scale));
-    annotationLayer.style.left = `${bounds.offsetLeft}px`;
-    annotationLayer.style.top = `${bounds.offsetTop}px`;
-    annotationLayer.style.width = `${bounds.width}px`;
-    annotationLayer.style.height = `${bounds.height}px`;
     annotationLayer.hidden = !state.document || !state.pageRender;
+    pageFrame.hidden = !state.document || !state.pageRender;
 
     annotationContext.setTransform(scale, 0, 0, scale, 0, 0);
     redrawAnnotations();
@@ -791,6 +796,7 @@ export function mountPdfWorkspace(
       pageLabel.textContent = "No document open";
       renderBackendNotes(state.backendStatus?.notes ?? bootstrap?.activePdfBackend.notes ?? []);
       renderReliability("unavailable", "Open a document to inspect native text extraction status for the current page.");
+      pageFrame.hidden = true;
       pageImage.hidden = true;
       annotationLayer.hidden = true;
       renderPlaceholder.hidden = false;
@@ -819,11 +825,13 @@ export function mountPdfWorkspace(
     renderBackendNotes(notes);
 
     if (state.pageRender) {
+      pageFrame.hidden = false;
       pageImage.hidden = false;
       pageImage.src = state.pageImageDataUrl ?? `data:${state.pageRender.mimeType};base64,${state.pageRender.dataBase64}`;
       annotationLayer.hidden = false;
       renderPlaceholder.hidden = true;
     } else {
+      pageFrame.hidden = true;
       pageImage.hidden = true;
       annotationLayer.hidden = true;
       renderPlaceholder.hidden = false;
