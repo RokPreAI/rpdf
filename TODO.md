@@ -1,10 +1,8 @@
 # Current TODOs
 
-- [ ] 2 UX remove-mode-switch-restore-copy
+- [ ] 3 Canvas add-text-tool
 
 # TODOs
-
-- [ ] 3 Canvas add-text-tool
 
 # Done TODOs
 
@@ -44,6 +42,7 @@
 - [x] 1 Canvas require-full-containment-selection
 - [x] 2 Canvas add-stroke-resize
 - [x] 2 UX add-editable-config-file
+- [x] 2 UX remove-mode-switch-restore-copy
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste

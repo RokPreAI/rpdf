@@ -1,0 +1,29 @@
+Priority: 3
+Area: Canvas
+Status: current
+Depends on: split-main-into-shell-and-modes, add-save-load-project-files, add-svg-export-eligibility
+
+Goal:
+Add typed text rendering in Canvas Mode so the user can place and preserve text directly on the canvas.
+
+Context:
+Typed text was part of the original product direction and plan, but it has not been implemented yet. The user now explicitly wants to write text on the screen.
+
+Expected changes:
+
+- add a text tool or equivalent text-entry flow in Canvas Mode
+- render text items on the canvas with selection compatibility
+- persist text items through save/load and mode-switch state
+- include text items in SVG export eligibility and output where supported
+
+Acceptance criteria:
+
+- The user can create visible text on the canvas with a keyboard-driven entry flow.
+- Text items survive save/load and mode switches.
+- Text items can be selected and moved like other canvas content.
+- SVG export handles text items honestly when the export target is otherwise compatible.
+
+Notes:
+
+- Keep the first pass intentionally simple: plain text placement is enough.
+- Rich text, rotation, advanced font management, and editing inspectors are out of scope for the initial slice.

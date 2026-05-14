@@ -94,7 +94,6 @@ export function mountAppShell(root: HTMLElement) {
     canvas: "",
     pdf: "",
   };
-  let renderRequestId = 0;
 
   const modeMetadata: Record<AppMode, { title: string; copy: string }> = {
     canvas: {
@@ -141,7 +140,7 @@ export function mountAppShell(root: HTMLElement) {
     modeProjectPaths[currentSnapshot.kind] = projectPathInput.value;
   }
 
-  async function restoreModeState(mode: AppMode, requestId: number) {
+  async function restoreModeState(mode: AppMode) {
     const snapshot = modeWorkspaceSnapshots[mode];
 
     if (!activeWorkspace || !snapshot || snapshot.kind !== mode) {
@@ -149,17 +148,9 @@ export function mountAppShell(root: HTMLElement) {
     }
 
     await activeWorkspace.importDocument(snapshot);
-
-    if (requestId !== renderRequestId) {
-      return;
-    }
-
-    backendStatus.textContent = `Restored ${mode} workspace state after mode switch`;
   }
 
   async function renderMode(mode: AppMode) {
-    const requestId = ++renderRequestId;
-
     persistActiveModeState();
 
     for (const button of modeButtons) {
@@ -179,13 +170,13 @@ export function mountAppShell(root: HTMLElement) {
     if (mode === "canvas") {
       activeWorkspace = mountCanvasWorkspace(workspaceRoot);
       renderAutosaveRecoveryState(mode);
-      await restoreModeState(mode, requestId);
+      await restoreModeState(mode);
       return;
     }
 
     activeWorkspace = mountPdfWorkspace(workspaceRoot, bootstrap);
     renderAutosaveRecoveryState(mode);
-    await restoreModeState(mode, requestId);
+    await restoreModeState(mode);
   }
 
   function autosaveKey(mode: AppMode) {
