@@ -321,6 +321,106 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
   }
 
+  function selectedVectorItems() {
+    return selectedItems
+      .map((target) => {
+        if (target.kind === "stroke") {
+          return strokes[target.index] ?? null;
+        }
+
+        if (target.kind === "shape") {
+          return shapes[target.index] ?? null;
+        }
+
+        return null;
+      })
+      .filter((item): item is VectorItem => Boolean(item));
+  }
+
+  function currentSelectionColor() {
+    const vectorItems = selectedVectorItems();
+
+    if (vectorItems.length === 0) {
+      return null;
+    }
+
+    const [firstItem] = vectorItems;
+
+    return vectorItems.every((item) => item.color === firstItem.color)
+      ? firstItem.color
+      : null;
+  }
+
+  function currentSelectionStrokeWidth() {
+    const vectorItems = selectedVectorItems();
+
+    if (vectorItems.length === 0) {
+      return null;
+    }
+
+    const [firstItem] = vectorItems;
+
+    return vectorItems.every((item) => item.baseWidth === firstItem.baseWidth)
+      ? firstItem.baseWidth
+      : null;
+  }
+
+  function applySelectionColor(color: string) {
+    const vectorItems = selectedVectorItems();
+
+    if (vectorItems.length === 0) {
+      return false;
+    }
+
+    for (const item of vectorItems) {
+      item.color = color;
+    }
+
+    return true;
+  }
+
+  function applySelectionStrokeWidth(width: number) {
+    const normalizedWidth = Number.isFinite(width) ? Math.max(1, width) : 1;
+    const vectorItems = selectedVectorItems();
+
+    if (vectorItems.length === 0) {
+      return false;
+    }
+
+    for (const item of vectorItems) {
+      item.baseWidth = normalizedWidth;
+    }
+
+    return true;
+  }
+
+  function syncStyleControls() {
+    const colorButtons = container.querySelectorAll<HTMLButtonElement>(".color-picker");
+    const strokeWidthInput = container.querySelector<HTMLInputElement>("#stroke-width");
+    const strokeWidthValue = container.querySelector<HTMLOutputElement>("#stroke-width-value");
+    const selectionColor = currentSelectionColor();
+    const selectionStrokeWidth = currentSelectionStrokeWidth();
+    const activeColor = selectionColor ?? strokeColor;
+    const activeWidth = selectionStrokeWidth ?? baseStrokeWidth;
+
+    for (const colorButton of colorButtons) {
+      const cssVariable = colorVariableByButtonId[colorButton.id];
+      const buttonColor = cssVariable ? readCssVariable(cssVariable) : "";
+      const isActive = selectionColor
+        ? buttonColor === selectionColor
+        : buttonColor === activeColor;
+
+      colorButton.classList.toggle("active", isActive);
+    }
+
+    if (strokeWidthInput && strokeWidthValue) {
+      strokeWidthInput.value = String(Math.max(1, Math.round(activeWidth)));
+      strokeWidthValue.textContent = selectionStrokeWidth === null && selectedVectorItems().length > 1
+        ? "Mixed"
+        : `${Math.max(1, Math.round(activeWidth))}px`;
+    }
+  }
+
   function setupPickers() {
     const colorButtons = container.querySelectorAll<HTMLButtonElement>(".color-picker");
     const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
@@ -342,14 +442,16 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         }
 
         strokeColor = readCssVariable(cssVariable);
-        selectedTool = "pen";
 
-        setActiveToolButton(toolButtons, selectedTool);
-
-        for (const colorButton of colorButtons) {
-          colorButton.classList.toggle("active", colorButton === button);
+        if (selectedItems.length > 0) {
+          applySelectionColor(strokeColor);
+          redraw();
+        } else {
+          selectedTool = "pen";
+          setActiveToolButton(toolButtons, selectedTool);
         }
 
+        syncStyleControls();
         updateCursor();
       });
     }
@@ -380,11 +482,18 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     strokeWidthInput.value = String(baseStrokeWidth);
     strokeWidthValue.textContent = `${baseStrokeWidth}px`;
     setActiveToolButton(toolButtons, selectedTool);
+    syncStyleControls();
     updateCursor();
 
     strokeWidthInput.addEventListener("input", () => {
-      baseStrokeWidth = Number(strokeWidthInput.value);
-      strokeWidthValue.textContent = `${baseStrokeWidth}px`;
+      baseStrokeWidth = Math.max(1, Number(strokeWidthInput.value));
+
+      if (selectedItems.length > 0) {
+        applySelectionStrokeWidth(baseStrokeWidth);
+        redraw();
+      }
+
+      syncStyleControls();
     });
 
   }
@@ -1413,6 +1522,8 @@ ${items}
     }
 
     selectedItems = uniqueTargets;
+    syncStyleControls();
+    updateCursor();
   }
 
   function toggleSelectionTarget(target: SelectionTarget) {
@@ -2441,13 +2552,6 @@ ${items}
   }>) {
     if (typeof event.detail.defaultStrokeWidth === "number") {
       baseStrokeWidth = event.detail.defaultStrokeWidth;
-      const strokeWidthInput = container.querySelector<HTMLInputElement>("#stroke-width");
-      const strokeWidthValue = container.querySelector<HTMLOutputElement>("#stroke-width-value");
-
-      if (strokeWidthInput && strokeWidthValue) {
-        strokeWidthInput.value = String(baseStrokeWidth);
-        strokeWidthValue.textContent = `${baseStrokeWidth}px`;
-      }
     }
 
     if (event.detail.defaultShapeKind === "rectangle" || event.detail.defaultShapeKind === "ellipse" || event.detail.defaultShapeKind === "line" || event.detail.defaultShapeKind === "arrow") {
@@ -2463,6 +2567,8 @@ ${items}
     if (typeof event.detail.defaultCanvasColor === "string") {
       strokeColor = event.detail.defaultCanvasColor;
     }
+
+    syncStyleControls();
   }
 
   function toCanvasBackgroundPattern(pattern: BackgroundPattern): CanvasBackgroundPattern {
@@ -2645,6 +2751,7 @@ ${items}
       await importImages(snapshot.document.images);
       await importPdfPages(snapshot.document.pdfPages ?? []);
       setSelection(resolveSelection(snapshot.selection));
+      syncStyleControls();
       redraw();
     },
     destroy() {

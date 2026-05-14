@@ -1,0 +1,28 @@
+Priority: 2
+Area: Canvas
+Status: current
+Depends on: add-multi-select, add-element-resize, add-marquee-selection
+
+Goal:
+Allow multiple selected resizeable canvas elements to be resized together from a shared selection box instead of only supporting resize for a single selected item.
+
+Context:
+The current resize system intentionally stays single-selection-only even after multi-select and marquee selection were added. The user now wants grouped resize behavior when several shapes are selected at once.
+
+Expected changes:
+
+- grouped resize handles for multi-selection
+- resize math that scales all selected resizeable items from a shared bounds box
+- stable behavior for mixed supported item types such as shapes, images, and imported PDF pages
+
+Acceptance criteria:
+
+- When multiple resizeable items are selected, the canvas shows a shared resize box with usable handles.
+- Dragging a shared handle resizes all supported selected items together predictably.
+- Group resize does not produce zero, NaN, or infinite dimensions and does not corrupt selection state.
+- Unsupported item types, if any, are handled explicitly instead of silently breaking the interaction.
+
+Notes:
+
+- Keep the first pass bounded to resizeable box-like items if stroke-resize semantics are still unresolved.
+- Prefer geometry captured at drag start so resize does not compound errors across pointer moves.

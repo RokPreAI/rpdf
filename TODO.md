@@ -1,10 +1,9 @@
 # Current TODOs
 
-- [ ] 2 Canvas add-selection-style-editing
+- [ ] 2 Canvas add-multi-selection-resize
 
 # TODOs
 
-- [ ] 2 Canvas add-multi-selection-resize
 - [ ] 2 Canvas add-input-polling-rate-setting
 - [ ] 2 Export harden-svg-export-and-save-path
 - [ ] 3 UX add-excalidraw-style-tool-and-color-shortcuts
@@ -38,6 +37,7 @@
 - [x] 2 Canvas add-multi-select
 - [x] 2 Canvas add-marquee-selection
 - [x] 2 Canvas add-stroke-selection-editing
+- [x] 2 Canvas add-selection-style-editing
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste
