@@ -117,6 +117,10 @@ type ResizeSession = {
   pointerOffset: Point;
   targets: Array<{
     target: SelectionTarget;
+    originalStroke?: {
+      baseWidth: number;
+      points: StrokePoint[];
+    };
     originalShapePoints?: {
       start: Point;
       end: Point;
@@ -1013,7 +1017,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function isResizableTarget(target: SelectionTarget | null) {
-    return target?.kind === "shape" || target?.kind === "image" || target?.kind === "pdf_page";
+    return target?.kind === "stroke" || target?.kind === "shape" || target?.kind === "image" || target?.kind === "pdf_page";
   }
 
   function currentResizableSelectionTargets() {
@@ -2039,6 +2043,22 @@ ${items}
         y: handlePosition.y - pointerPoint.y,
       },
       targets: resizeTargets.map((target) => {
+        if (target.kind === "stroke") {
+          const stroke = strokes[target.index];
+
+          return {
+            target,
+            originalStroke: stroke ? {
+              baseWidth: stroke.baseWidth,
+              points: stroke.points.map((point) => ({
+                x: point.x,
+                y: point.y,
+                pressure: point.pressure,
+              })),
+            } : undefined,
+          };
+        }
+
         if (target.kind === "shape") {
           const shape = shapes[target.index];
 
@@ -2078,6 +2098,18 @@ ${items}
         };
       }),
     };
+  }
+
+  function scaleFactor(originalSpan: number, nextSpan: number) {
+    if (!Number.isFinite(originalSpan) || Math.abs(originalSpan) < 0.0001) {
+      return 1;
+    }
+
+    if (!Number.isFinite(nextSpan)) {
+      return 1;
+    }
+
+    return Math.abs(nextSpan / originalSpan);
   }
 
   function applyResize(session: ResizeSession, point: Point) {
@@ -2126,9 +2158,28 @@ ${items}
       maxX: normalizedBounds.minX + safeSpan(normalizedBounds.maxX - normalizedBounds.minX, minimumSize),
       maxY: normalizedBounds.minY + safeSpan(normalizedBounds.maxY - normalizedBounds.minY, minimumSize),
     } satisfies Bounds;
+    const widthScale = scaleFactor(originalBounds.maxX - originalBounds.minX, nextBounds.maxX - nextBounds.minX);
+    const heightScale = scaleFactor(originalBounds.maxY - originalBounds.minY, nextBounds.maxY - nextBounds.minY);
+    const strokeWidthScale = Math.max(0.25, (widthScale + heightScale) / 2);
 
     for (const targetSession of session.targets) {
       const { target } = targetSession;
+
+      if (target.kind === "stroke") {
+        const stroke = strokes[target.index];
+        const originalStroke = targetSession.originalStroke;
+
+        if (!stroke || !originalStroke) {
+          continue;
+        }
+
+        stroke.points = originalStroke.points.map((originalPoint) => ({
+          pressure: originalPoint.pressure,
+          ...remapPointBetweenBounds(originalPoint, originalBounds, nextBounds),
+        }));
+        stroke.baseWidth = Math.max(1, originalStroke.baseWidth * strokeWidthScale);
+        continue;
+      }
 
       if (target.kind === "image") {
         const image = images[target.index];

@@ -1,0 +1,29 @@
+Priority: 2
+Area: UX
+Status: current
+Depends on: add-config-and-toolbar-icons, add-excalidraw-style-tool-and-color-shortcuts
+
+Goal:
+Add a real user-editable config file for stable app-level settings such as the color palette, canvas background, background pattern, and keyboard shortcuts.
+
+Context:
+The project already stores some preferences, but the user now wants an editable config file rather than only internal persisted settings. This is broader than the earlier simple config surface task.
+
+Expected changes:
+
+- define a config file location and versioned format
+- load configurable palette, background color, and background pattern values from that file
+- load configurable keyboard shortcut mappings from that file
+- define fallback behavior for missing, invalid, or partial config values
+
+Acceptance criteria:
+
+- A user can edit a config file outside the app and see the relevant settings applied on the next app start or reload path.
+- Palette, background color, and background pattern are no longer hardcoded-only values.
+- Keyboard shortcuts are driven by config with safe defaults when no custom config exists.
+- Invalid config content fails closed with a clear fallback instead of breaking startup.
+
+Notes:
+
+- Keep the first pass to settings that already have obvious UI meaning.
+- Do not widen this into a plugin or theme system.

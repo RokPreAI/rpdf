@@ -1,10 +1,9 @@
 # Current TODOs
 
-- [ ] 2 Canvas add-stroke-resize
+- [ ] 2 UX add-editable-config-file
 
 # TODOs
 
-- [ ] 2 UX add-editable-config-file
 - [ ] 2 UX remove-mode-switch-restore-copy
 - [ ] 3 Canvas add-text-tool
 
@@ -44,6 +43,7 @@
 - [x] 3 UX add-excalidraw-style-tool-and-color-shortcuts
 - [x] 1 Canvas improve-selection-hit-geometry
 - [x] 1 Canvas require-full-containment-selection
+- [x] 2 Canvas add-stroke-resize
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste
