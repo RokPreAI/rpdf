@@ -1,0 +1,26 @@
+Priority: 2
+Area: Canvas
+Status: current
+Depends on: add-multi-select
+
+Goal:
+Make select behave like desktop rectangle selection, where dragging on empty space creates a marquee box that selects items inside it.
+
+Context:
+The user explicitly asked for Windows-desktop-style select behavior. This only becomes useful once multiple simultaneous selections are supported.
+
+Expected changes:
+
+- drag-to-select marquee box in Canvas Mode
+- hit rules for items intersecting or contained by the marquee
+- clear behavior for starting marquee on empty space versus dragging an already-selected item
+
+Acceptance criteria:
+
+- Dragging on empty canvas with the select tool shows a visible selection rectangle.
+- Releasing the marquee selects the intended items predictably.
+- Marquee selection does not break normal move or resize interactions for existing selected items.
+
+Notes:
+
+- Prefer a simple, explicit first version over complex modifier-key selection semantics.

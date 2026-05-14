@@ -1,0 +1,30 @@
+Priority: 2
+Area: Reading
+Status: done
+Depends on: build-pdf-mode-shell, architecture-foundation-and-pdfium-gate
+
+Goal:
+Add native text extraction, TTS playback, explicit reliability states, OCR fallback entry points, and honest trust-state UI.
+
+Context:
+This migrates the old README TODO `Add TTS`, but the plan requires a full reading-support pipeline rather than a raw speak-text button.
+
+Expected changes:
+
+- backend text extraction commands
+- reliability-state model
+- TTS controls and playback state
+- OCR trigger path
+- trust-state warnings and fallback behavior
+
+Acceptance criteria:
+
+- The app can read extracted PDF text aloud locally.
+- The UI distinguishes native reliable, native weak, OCR-derived, and unavailable states.
+- The app follows the required fallback order: native text, OCR, warning.
+- The app does not pretend exact follow-along exists when confidence is weak.
+
+Notes:
+
+- Math-aware reading is deferred; do not block this task on advanced math interpretation.
+

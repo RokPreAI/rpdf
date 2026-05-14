@@ -1,0 +1,27 @@
+Priority: 2
+Area: Canvas
+Status: pending
+Depends on: fix-select-tool, add-element-resize
+
+Goal:
+Bring freehand strokes into the editable selection workflow instead of leaving them as second-class items after selection.
+
+Context:
+Strokes can already be hit-tested, but the recent resize work intentionally excluded them. The user explicitly wants strokes to participate in selection behavior more fully.
+
+Expected changes:
+
+- improve selected-state affordances for strokes
+- define first-pass stroke editing behavior within the selection model
+- make sure later batch-style edits can include strokes
+
+Acceptance criteria:
+
+- A selected stroke has clear visible feedback and remains stable under normal selection interactions.
+- Stroke selections participate correctly in later multi-select and style-edit flows.
+- Any intentional limits on stroke resize/edit behavior are explicit and documented.
+
+Notes:
+
+- This task does not have to invent full geometric stroke-resize semantics if a narrower first pass is more reliable.
+

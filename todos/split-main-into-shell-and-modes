@@ -1,0 +1,27 @@
+Priority: 1
+Area: App
+Status: done
+Depends on: architecture-foundation-and-pdfium-gate
+
+Goal:
+Refactor the current frontend prototype into an app shell with explicit Canvas Mode and PDF Mode entry points.
+
+Context:
+This directly migrates the old README TODO `Split main.ts into multiple files` and supports the product identity requirement that the app has two distinct modes.
+
+Expected changes:
+
+- split `src/main.ts` into app shell and mode-specific modules
+- add mode switch and shared app state
+- create placeholder tool surfaces for both modes
+
+Acceptance criteria:
+
+- `src/main.ts` is no longer the whole application.
+- The app visibly separates Canvas Mode from PDF Mode.
+- Shared state and mode-specific behavior are moved into clearer files/modules.
+
+Notes:
+
+- Avoid pulling in a frontend framework unless clearly required.
+

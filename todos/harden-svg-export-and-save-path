@@ -1,0 +1,27 @@
+Priority: 2
+Area: Export
+Status: pending
+Depends on: add-svg-export-eligibility, fix-select-tool
+
+Goal:
+Verify the current SVG export flow end to end and make sure users can intentionally choose where exported SVG files are saved.
+
+Context:
+The user specifically asked to test SVG export and select save path. The current implementation needs validation and likely a clearer export destination flow.
+
+Expected changes:
+
+- test the current SVG export behavior against real selections and eligible content
+- fix any SVG export regressions uncovered by that testing
+- add or verify explicit save-path selection for exported SVG output
+
+Acceptance criteria:
+
+- SVG export is confirmed to work for supported export targets.
+- Export failure cases remain honest and clear for ineligible mixed-content selections.
+- Users can choose the SVG export destination instead of relying on an unclear or fixed save location.
+
+Notes:
+
+- Keep this task scoped to SVG export reliability and destination control, not a full generic export framework.
+

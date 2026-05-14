@@ -1,0 +1,30 @@
+Priority: 0
+Area: Architecture
+Status: done
+Depends on: none
+
+Goal:
+Lock the durable architecture baseline and the early Pdfium-backed PDF direction into the codebase structure so later work does not drift into an ad hoc prototype.
+
+Context:
+This is the first execution task from `PLAN.md`. It combines the robust architecture choice with the fast engine-commitment choice from `DECISION.md`. It also subsumes part of the old README TODO `Split main.ts into multiple files`.
+
+Expected changes:
+
+- define or refine frontend/backend module boundaries
+- add the initial Rust PDF engine adapter shape under `src-tauri`
+- prepare IPC contracts and shared DTOs for mode switching, PDF rendering, text extraction, save/load, and reliability state
+- update Rust dependencies for the chosen Pdfium path
+
+Acceptance criteria:
+
+- The repo has a clear boundary-first structure that separates app shell, canvas, PDF, storage, and reading concerns.
+- The backend contains a concrete Pdfium-oriented integration point behind a Rust abstraction.
+- The implementation no longer depends on a later “pick a PDF engine” task.
+- If a dependency or packaging blocker appears, it is documented in code comments or the task report rather than hidden.
+
+Notes:
+
+- Do not build user-facing PDF features here beyond what is needed to establish the adapter direction.
+- Keep the integration replaceable enough that future engine changes are still possible if the chosen path fails.
+

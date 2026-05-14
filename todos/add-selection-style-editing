@@ -1,0 +1,27 @@
+Priority: 2
+Area: Canvas
+Status: pending
+Depends on: add-multi-select, add-stroke-selection-editing
+
+Goal:
+Allow the current selection set to have its colors and stroke width changed directly.
+
+Context:
+The user wants to modify selected objects after creation instead of only changing the active tool defaults. This becomes especially important once multi-select exists.
+
+Expected changes:
+
+- controls or commands that apply color changes to the current selection
+- controls or commands that apply stroke-width changes to the current selection
+- batch application across supported selected items
+
+Acceptance criteria:
+
+- Selected objects can have color changed after they are created.
+- Selected vector objects can have stroke width changed after they are created.
+- Applying style changes to a mixed supported selection updates the selected objects without corrupting selection state.
+
+Notes:
+
+- Keep this scoped to post-selection style edits, not a full inspector panel redesign.
+

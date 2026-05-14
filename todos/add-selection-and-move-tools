@@ -1,0 +1,27 @@
+Priority: 2
+Area: Canvas
+Status: done
+Depends on: split-main-into-shell-and-modes
+
+Goal:
+Add bounded selection behavior plus movement of selected items in Canvas Mode.
+
+Context:
+This migrates the README TODOs `Add selection tool` and `Add a move tool that moves selected items`.
+
+Expected changes:
+
+- selection model and hit testing
+- move interaction for selected items
+- selection state wired into export eligibility
+
+Acceptance criteria:
+
+- Users can select canvas items intentionally.
+- Selected items can be moved without corrupting document state.
+- Selection state can later be reused for export targeting.
+
+Notes:
+
+- Keep the first version simple and reliable rather than feature-rich.
+

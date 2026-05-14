@@ -1,0 +1,27 @@
+Priority: 3
+Area: UX
+Status: done
+Depends on: split-main-into-shell-and-modes
+
+Goal:
+Add a simple configuration surface and toolbar icon system for the current tools and settings.
+
+Context:
+This migrates the old README TODOs `Add config file` and `Add icons to the toolbar`. It is lower priority than architecture, storage, and reading support.
+
+Expected changes:
+
+- config/settings persistence path
+- toolbar icon assets or icon mapping
+- settings for pen/tool defaults and likely recolor defaults
+
+Acceptance criteria:
+
+- Core user settings can be stored and reloaded.
+- Toolbar actions are visually identifiable without relying on text only.
+- The config surface does not undermine the minimal UI direction.
+
+Notes:
+
+- Keep this small; do not turn it into a large preferences subsystem yet.
+

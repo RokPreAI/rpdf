@@ -1,0 +1,28 @@
+Priority: 0
+Area: Storage
+Status: done
+Depends on: architecture-foundation-and-pdfium-gate
+
+Goal:
+Create the durable internal document/session model for canvas work, PDF study state, autosave state, and derived cache metadata.
+
+Context:
+`PLAN.md` requires a versioned internal persistence model early. This is the robust alternative to rough prototype-only JSON.
+
+Expected changes:
+
+- schema/types for `CanvasDocument`
+- schema/types for `PdfStudyDocument`
+- version fields and migration-ready structure
+- derived cache metadata for OCR/text analysis
+
+Acceptance criteria:
+
+- Canvas and PDF study state can be represented without UI-only fields.
+- The internal format contains explicit versioning.
+- Derived OCR/text-analysis data is clearly separate from user-authored data.
+
+Notes:
+
+- Keep the model simple, but do not collapse both modes into one fake shared document format.
+

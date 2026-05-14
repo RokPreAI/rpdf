@@ -1,0 +1,27 @@
+Priority: 1
+Area: Canvas
+Status: done
+Depends on: add-selection-and-move-tools, add-draw-shapes, add-pdf-page-import-and-recolor
+
+Goal:
+Fix the current selection workflow so item picking and post-selection behavior are dependable across the elements the app already supports.
+
+Context:
+The first selection implementation exists, but the user explicitly called out that the select tool still needs work. This is now corrective follow-up work on a previously completed baseline task.
+
+Expected changes:
+
+- repair hit testing and selection activation where it is currently inconsistent
+- verify selection behavior for strokes, shapes, pasted images, and imported PDF pages
+- make the selected-state feedback and interaction flow stable enough for later resize work
+
+Acceptance criteria:
+
+- The select tool can intentionally select each currently supported selectable element type.
+- Selection does not get lost unexpectedly during normal click, drag, or mode-switch workflows.
+- Selection behavior is stable enough to serve as the base for resize handles or equivalent resize interactions.
+
+Notes:
+
+- Treat this as a reliability fix, not a redesign of the entire interaction model.
+

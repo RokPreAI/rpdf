@@ -1,0 +1,27 @@
+Priority: 3
+Area: UX
+Status: pending
+Depends on: split-main-into-shell-and-modes, add-color-picker, add-draw-shapes
+
+Goal:
+Add fast keyboard shortcuts for tool switching and color switching, following the general workflow style users expect from Excalidraw-like canvas apps.
+
+Context:
+The user explicitly asked for Excalidraw-style shortcuts. This should improve flow without introducing a heavy command system.
+
+Expected changes:
+
+- keyboard shortcuts for the main canvas tools
+- keyboard shortcuts for the existing color palette
+- in-app discoverability for the added shortcuts
+
+Acceptance criteria:
+
+- Main tools can be switched from the keyboard without opening settings.
+- The current color can be changed from the keyboard using a simple memorable mapping.
+- Shortcuts do not break text inputs or other normal focused-control behavior.
+
+Notes:
+
+- Match the spirit of Excalidraw-style access patterns even if exact key choices need to adapt to the current tool set.
+

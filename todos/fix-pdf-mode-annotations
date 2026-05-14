@@ -1,0 +1,27 @@
+Priority: 1
+Area: PDF
+Status: done
+Depends on: build-pdf-mode-shell
+
+Goal:
+Make PDF Mode show its annotation layer or explicitly restore the currently missing annotation visibility behavior.
+
+Context:
+The user reported that they do not see annotations in PDF Mode. That means either the annotation surface is absent, hidden, or not wired to visible state.
+
+Expected changes:
+
+- inspect PDF Mode annotation rendering and visibility
+- restore annotation drawing or overlay mounting
+- verify annotations remain visible against current recolor and PDF rendering paths
+
+Acceptance criteria:
+
+- Annotation visuals appear in PDF Mode when expected.
+- Annotation visibility does not silently break when the PDF view updates or recolor settings change.
+- The annotation layer is clearly anchored to the PDF workspace rather than hidden behind it.
+
+Notes:
+
+- This is a product-critical PDF-mode behavior gap, not optional polish.
+

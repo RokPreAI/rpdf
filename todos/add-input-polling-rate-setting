@@ -1,0 +1,27 @@
+Priority: 2
+Area: Canvas
+Status: pending
+Depends on: add-tablet-pressure-and-stroke-width
+
+Goal:
+Add a user-adjustable input polling or sampling-rate setting to improve line quality when strokes look jagged from undersampled pointer input.
+
+Context:
+The user reported that lines can end up a bit jagged, and suggested exposing a polling-rate setting. This is a drawing-quality control task rather than a pure visual styling issue.
+
+Expected changes:
+
+- add a configurable input polling or sampling control for drawing
+- wire the setting into stroke capture so higher-quality sampling is possible where supported
+- preserve sensible defaults so the app still behaves well without manual tuning
+
+Acceptance criteria:
+
+- Users can adjust the relevant drawing-input sampling setting from the UI or persisted config surface.
+- Changing the setting has a real effect on stroke capture behavior or smoothing quality.
+- The setting does not break mouse drawing, pressure-sensitive drawing, or saved preference loading.
+
+Notes:
+
+- If the real bottleneck is event interpolation or smoothing rather than literal polling rate, the implementation may use a differently named internal mechanism as long as the user-facing control honestly addresses the jagged-line problem.
+
