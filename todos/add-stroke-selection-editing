@@ -1,6 +1,6 @@
 Priority: 2
 Area: Canvas
-Status: pending
+Status: current
 Depends on: fix-select-tool, add-element-resize
 
 Goal:
@@ -24,4 +24,3 @@ Acceptance criteria:
 Notes:
 
 - This task does not have to invent full geometric stroke-resize semantics if a narrower first pass is more reliable.
-

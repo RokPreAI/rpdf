@@ -1,10 +1,9 @@
 # Current TODOs
 
-- [ ] 2 Canvas add-marquee-selection
+- [ ] 2 Canvas add-stroke-selection-editing
 
 # TODOs
 
-- [ ] 2 Canvas add-stroke-selection-editing
 - [ ] 2 Canvas add-selection-style-editing
 - [ ] 2 Canvas add-input-polling-rate-setting
 - [ ] 2 Export harden-svg-export-and-save-path
@@ -37,6 +36,7 @@
 - [x] 2 Canvas fix-zoom-scaled-stroke-rendering
 - [x] 2 UX harden-responsive-layout-under-window-resize
 - [x] 2 Canvas add-multi-select
+- [x] 2 Canvas add-marquee-selection
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste

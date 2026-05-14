@@ -121,6 +121,12 @@ type ResizeSession = {
   };
 };
 
+type MarqueeSession = {
+  origin: Point;
+  current: Point;
+  additive: boolean;
+};
+
 type Tool = "pen" | "rectangle" | "ellipse" | "line" | "arrow" | "select" | "pan" | "eraser";
 type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
@@ -197,6 +203,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let moveAnchorPoint: Point | null = null;
   let activeResizeHandle: ResizeHandle | null = null;
   let resizeSession: ResizeSession | null = null;
+  let marqueeSession: MarqueeSession | null = null;
   let isPanning = false;
   let isSpaceDown = false;
   let devicePixelRatioValue = window.devicePixelRatio || 1;
@@ -847,6 +854,40 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     ctx.restore();
   }
 
+  function drawMarqueeOverlay() {
+    if (!marqueeSession) {
+      return;
+    }
+
+    const bounds = normalizeBounds({
+      minX: marqueeSession.origin.x,
+      minY: marqueeSession.origin.y,
+      maxX: marqueeSession.current.x,
+      maxY: marqueeSession.current.y,
+    });
+
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.scale, camera.scale);
+    ctx.setLineDash([12 / camera.scale, 8 / camera.scale]);
+    ctx.lineWidth = 2 / camera.scale;
+    ctx.strokeStyle = readCssVariable("--cyan") || "#7dcfff";
+    ctx.fillStyle = "rgba(125, 207, 255, 0.12)";
+    ctx.fillRect(
+      bounds.minX,
+      bounds.minY,
+      Math.max(1, bounds.maxX - bounds.minX),
+      Math.max(1, bounds.maxY - bounds.minY),
+    );
+    ctx.strokeRect(
+      bounds.minX,
+      bounds.minY,
+      Math.max(1, bounds.maxX - bounds.minX),
+      Math.max(1, bounds.maxY - bounds.minY),
+    );
+    ctx.restore();
+  }
+
   function currentSvgExportState() {
     if (selectedItems.length > 0) {
       const vectors: VectorItem[] = [];
@@ -958,6 +999,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
 
     drawSelectionOverlay();
+    drawMarqueeOverlay();
     updateSvgExportState();
   }
 
@@ -1116,6 +1158,51 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       maxX: bounds.x + bounds.width,
       maxY: bounds.y + bounds.height,
     };
+  }
+
+  function boundsIntersect(firstBounds: Bounds, secondBounds: Bounds) {
+    return firstBounds.minX <= secondBounds.maxX
+      && firstBounds.maxX >= secondBounds.minX
+      && firstBounds.minY <= secondBounds.maxY
+      && firstBounds.maxY >= secondBounds.minY;
+  }
+
+  function collectTargetsInBounds(bounds: Bounds) {
+    const targets: SelectionTarget[] = [];
+
+    for (let pdfPageIndex = 0; pdfPageIndex < pdfPages.length; pdfPageIndex += 1) {
+      const target: SelectionTarget = {
+        kind: "pdf_page",
+        index: pdfPageIndex,
+      };
+      const targetSelectionBounds = targetBounds(target);
+
+      if (targetSelectionBounds && boundsIntersect(bounds, targetSelectionBounds)) {
+        targets.push(target);
+      }
+    }
+
+    for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+      const target: SelectionTarget = {
+        kind: "image",
+        index: imageIndex,
+      };
+      const targetSelectionBounds = targetBounds(target);
+
+      if (targetSelectionBounds && boundsIntersect(bounds, targetSelectionBounds)) {
+        targets.push(target);
+      }
+    }
+
+    for (const target of orderedVectorSelectionTargets()) {
+      const targetSelectionBounds = targetBounds(target);
+
+      if (targetSelectionBounds && boundsIntersect(bounds, targetSelectionBounds)) {
+        targets.push(target);
+      }
+    }
+
+    return targets;
   }
 
   function createSvgShapeMarkup(shape: Shape, minX: number, minY: number) {
@@ -2043,7 +2130,17 @@ ${items}
           setSelection([pointerSelection]);
         }
       } else if (!additiveSelection) {
-        setSelection([]);
+        marqueeSession = {
+          origin: point,
+          current: point,
+          additive: false,
+        };
+      } else {
+        marqueeSession = {
+          origin: point,
+          current: point,
+          additive: true,
+        };
       }
 
       activeResizeHandle = hitTestResizeHandle(point);
@@ -2106,6 +2203,12 @@ ${items}
         return;
       }
 
+      if (marqueeSession && (event.buttons & 1) !== 0) {
+        marqueeSession.current = point;
+        redraw();
+        return;
+      }
+
       if (selectedItems.length === 0 || !moveAnchorPoint || (event.buttons & 1) === 0) {
         updateCursor();
         return;
@@ -2137,12 +2240,32 @@ ${items}
   };
 
   const onPointerUp = (event: PointerEvent) => {
+    if (marqueeSession) {
+      const marqueeBounds = normalizeBounds({
+        minX: marqueeSession.origin.x,
+        minY: marqueeSession.origin.y,
+        maxX: marqueeSession.current.x,
+        maxY: marqueeSession.current.y,
+      });
+      const marqueeWidth = marqueeBounds.maxX - marqueeBounds.minX;
+      const marqueeHeight = marqueeBounds.maxY - marqueeBounds.minY;
+
+      if (marqueeWidth >= 4 / camera.scale || marqueeHeight >= 4 / camera.scale) {
+        const matchedTargets = collectTargetsInBounds(marqueeBounds);
+        setSelection(marqueeSession.additive ? [...selectedItems, ...matchedTargets] : matchedTargets);
+      } else if (!marqueeSession.additive) {
+        setSelection([]);
+      }
+    }
+
     currentStroke = null;
     currentShape = null;
     moveAnchorPoint = null;
     resizeSession = null;
+    marqueeSession = null;
     isPanning = false;
     activeResizeHandle = null;
+    redraw();
     updateCursor();
 
     if (canvas.hasPointerCapture(event.pointerId)) {
@@ -2155,8 +2278,10 @@ ${items}
     currentShape = null;
     moveAnchorPoint = null;
     resizeSession = null;
+    marqueeSession = null;
     isPanning = false;
     activeResizeHandle = null;
+    redraw();
     updateCursor();
   };
 
