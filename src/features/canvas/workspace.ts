@@ -112,13 +112,21 @@ type Bounds = {
 
 type ResizeSession = {
   handle: ResizeHandle;
-  target: SelectionTarget;
   originalBounds: Bounds;
   pointerOffset: Point;
-  originalShapePoints?: {
-    start: Point;
-    end: Point;
-  };
+  targets: Array<{
+    target: SelectionTarget;
+    originalShapePoints?: {
+      start: Point;
+      end: Point;
+    };
+    originalBox?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+  }>;
 };
 
 type MarqueeSession = {
@@ -835,10 +843,6 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     });
   }
 
-  function currentPrimarySelection() {
-    return selectedItems.length === 1 ? selectedItems[0] : null;
-  }
-
   function currentSelectionBounds() {
     const boundsList = selectedItems
       .map((target) => targetBounds(target))
@@ -855,6 +859,34 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     return target?.kind === "shape" || target?.kind === "image" || target?.kind === "pdf_page";
   }
 
+  function currentResizableSelectionTargets() {
+    if (selectedItems.length === 0) {
+      return [];
+    }
+
+    return selectedItems.every((target) => isResizableTarget(target))
+      ? selectedItems
+      : [];
+  }
+
+  function currentResizeBounds() {
+    const resizeTargets = currentResizableSelectionTargets();
+
+    if (resizeTargets.length === 0) {
+      return null;
+    }
+
+    const boundsList = resizeTargets
+      .map((target) => targetBounds(target))
+      .filter((bounds): bounds is Bounds => Boolean(bounds));
+
+    if (boundsList.length === 0) {
+      return null;
+    }
+
+    return unionBounds(boundsList);
+  }
+
   function resizeHandlePositions(bounds: Bounds) {
     return {
       nw: { x: bounds.minX, y: bounds.minY },
@@ -869,13 +901,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function hitTestResizeHandle(point: Point) {
-    const selection = currentPrimarySelection();
-
-    if (!selection || !isResizableTarget(selection)) {
-      return null;
-    }
-
-    const bounds = targetBounds(selection);
+    const bounds = currentResizeBounds();
 
     if (!bounds) {
       return null;
@@ -976,25 +1002,21 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       }
     }
 
-    const primarySelection = currentPrimarySelection();
+    const resizeBounds = currentResizeBounds();
 
-    if (isResizableTarget(primarySelection)) {
-      const bounds = primarySelection ? targetBounds(primarySelection) : null;
+    if (resizeBounds) {
+      const handleSize = Math.max(10 / camera.scale, 8);
+      const handleHalf = handleSize / 2;
+      const handles = resizeHandlePositions(resizeBounds);
 
-      if (bounds) {
-        const handleSize = Math.max(10 / camera.scale, 8);
-        const handleHalf = handleSize / 2;
-        const handles = resizeHandlePositions(bounds);
+      ctx.setLineDash([]);
+      ctx.fillStyle = readCssVariable("--bg") || "#1a1b26";
+      ctx.strokeStyle = readCssVariable("--yellow") || "#e0af68";
 
-        ctx.setLineDash([]);
-        ctx.fillStyle = readCssVariable("--bg") || "#1a1b26";
-        ctx.strokeStyle = readCssVariable("--yellow") || "#e0af68";
-
-        for (const handle of ["nw", "ne", "se", "sw"] as ResizeHandle[]) {
-          const position = handles[handle];
-          ctx.fillRect(position.x - handleHalf, position.y - handleHalf, handleSize, handleSize);
-          ctx.strokeRect(position.x - handleHalf, position.y - handleHalf, handleSize, handleSize);
-        }
+      for (const handle of ["nw", "ne", "se", "sw"] as ResizeHandle[]) {
+        const position = handles[handle];
+        ctx.fillRect(position.x - handleHalf, position.y - handleHalf, handleSize, handleSize);
+        ctx.strokeRect(position.x - handleHalf, position.y - handleHalf, handleSize, handleSize);
       }
     }
 
@@ -1541,10 +1563,6 @@ ${items}
     setSelection([...selectedItems, target]);
   }
 
-  function selectionKeyMatches(target: SelectionTarget, key: string | null) {
-    return key !== null && selectionTargetKey(target) === key;
-  }
-
   function currentSelectionSnapshot(): CanvasSelectionDocument | null {
     if (selectedItems.length === 0) {
       return null;
@@ -1774,8 +1792,67 @@ ${items}
     return Math.max(minimumSize, Math.abs(value));
   }
 
+  function createResizeSession(handle: ResizeHandle, pointerPoint: Point): ResizeSession | null {
+    const resizeTargets = currentResizableSelectionTargets();
+    const originalBounds = currentResizeBounds();
+
+    if (resizeTargets.length === 0 || !originalBounds) {
+      return null;
+    }
+
+    const handlePosition = handlePoint(originalBounds, handle);
+
+    return {
+      handle,
+      originalBounds,
+      pointerOffset: {
+        x: handlePosition.x - pointerPoint.x,
+        y: handlePosition.y - pointerPoint.y,
+      },
+      targets: resizeTargets.map((target) => {
+        if (target.kind === "shape") {
+          const shape = shapes[target.index];
+
+          return {
+            target,
+            originalShapePoints: shape ? {
+              start: { ...shape.start },
+              end: { ...shape.end },
+            } : undefined,
+          };
+        }
+
+        if (target.kind === "image") {
+          const image = images[target.index];
+
+          return {
+            target,
+            originalBox: image ? {
+              x: image.x,
+              y: image.y,
+              width: image.width,
+              height: image.height,
+            } : undefined,
+          };
+        }
+
+        const pdfPage = pdfPages[target.index];
+
+        return {
+          target,
+          originalBox: pdfPage ? {
+            x: pdfPage.x,
+            y: pdfPage.y,
+            width: pdfPage.width,
+            height: pdfPage.height,
+          } : undefined,
+        };
+      }),
+    };
+  }
+
   function applyResize(session: ResizeSession, point: Point) {
-    const { target, originalBounds, handle } = session;
+    const { originalBounds, handle } = session;
     const minimumSize = Math.max(12 / camera.scale, 6);
     const fixedCorner = handle === "nw"
       ? { x: originalBounds.maxX, y: originalBounds.maxY }
@@ -1821,51 +1898,75 @@ ${items}
       maxY: normalizedBounds.minY + safeSpan(normalizedBounds.maxY - normalizedBounds.minY, minimumSize),
     } satisfies Bounds;
 
-    if (target.kind === "image") {
-      const image = images[target.index];
+    for (const targetSession of session.targets) {
+      const { target } = targetSession;
 
-      if (!image) {
-        return;
+      if (target.kind === "image") {
+        const image = images[target.index];
+        const originalBox = targetSession.originalBox;
+
+        if (!image || !originalBox) {
+          continue;
+        }
+
+        const nextTopLeft = remapPointBetweenBounds(
+          { x: originalBox.x, y: originalBox.y },
+          originalBounds,
+          nextBounds,
+        );
+        const nextBottomRight = remapPointBetweenBounds(
+          { x: originalBox.x + originalBox.width, y: originalBox.y + originalBox.height },
+          originalBounds,
+          nextBounds,
+        );
+
+        image.x = Math.min(nextTopLeft.x, nextBottomRight.x);
+        image.y = Math.min(nextTopLeft.y, nextBottomRight.y);
+        image.width = Math.max(minimumSize, Math.abs(nextBottomRight.x - nextTopLeft.x));
+        image.height = Math.max(minimumSize, Math.abs(nextBottomRight.y - nextTopLeft.y));
+        continue;
       }
 
-      image.x = nextBounds.minX;
-      image.y = nextBounds.minY;
-      image.width = Math.max(minimumSize, nextBounds.maxX - nextBounds.minX);
-      image.height = Math.max(minimumSize, nextBounds.maxY - nextBounds.minY);
-      return;
-    }
+      if (target.kind === "pdf_page") {
+        const pdfPage = pdfPages[target.index];
+        const originalBox = targetSession.originalBox;
 
-    if (target.kind === "pdf_page") {
-      const pdfPage = pdfPages[target.index];
+        if (!pdfPage || !originalBox) {
+          continue;
+        }
 
-      if (!pdfPage) {
-        return;
+        const nextTopLeft = remapPointBetweenBounds(
+          { x: originalBox.x, y: originalBox.y },
+          originalBounds,
+          nextBounds,
+        );
+        const nextBottomRight = remapPointBetweenBounds(
+          { x: originalBox.x + originalBox.width, y: originalBox.y + originalBox.height },
+          originalBounds,
+          nextBounds,
+        );
+
+        pdfPage.x = Math.min(nextTopLeft.x, nextBottomRight.x);
+        pdfPage.y = Math.min(nextTopLeft.y, nextBottomRight.y);
+        pdfPage.width = Math.max(minimumSize, Math.abs(nextBottomRight.x - nextTopLeft.x));
+        pdfPage.height = Math.max(minimumSize, Math.abs(nextBottomRight.y - nextTopLeft.y));
+        continue;
       }
 
-      pdfPage.x = nextBounds.minX;
-      pdfPage.y = nextBounds.minY;
-      pdfPage.width = Math.max(minimumSize, nextBounds.maxX - nextBounds.minX);
-      pdfPage.height = Math.max(minimumSize, nextBounds.maxY - nextBounds.minY);
-      return;
+      if (target.kind !== "shape") {
+        continue;
+      }
+
+      const shape = shapes[target.index];
+      const originalShapePoints = targetSession.originalShapePoints;
+
+      if (!shape || !originalShapePoints) {
+        continue;
+      }
+
+      shape.start = remapPointBetweenBounds(originalShapePoints.start, originalBounds, nextBounds);
+      shape.end = remapPointBetweenBounds(originalShapePoints.end, originalBounds, nextBounds);
     }
-
-    if (target.kind !== "shape") {
-      return;
-    }
-
-    const shape = shapes[target.index];
-
-    if (!shape) {
-      return;
-    }
-
-    const originalShapePoints = session.originalShapePoints ?? {
-      start: { ...shape.start },
-      end: { ...shape.end },
-    };
-
-    shape.start = remapPointBetweenBounds(originalShapePoints.start, originalBounds, nextBounds);
-    shape.end = remapPointBetweenBounds(originalShapePoints.end, originalBounds, nextBounds);
   }
 
   function addLoadedImage(image: HTMLImageElement, id: string, assetPath: string) {
@@ -2246,10 +2347,6 @@ ${items}
       const additiveSelection = event.shiftKey || event.ctrlKey || event.metaKey;
       const resizeHandle = hitTestResizeHandle(point);
       const pointerSelection = hitTestSelection(point);
-      const pointerSelectionKey = pointerSelection ? selectionTargetKey(pointerSelection) : null;
-      const clickedSelectedTarget = pointerSelection
-        ? selectedItems.find((target) => selectionKeyMatches(target, pointerSelectionKey)) ?? null
-        : null;
       const selectedBounds = currentSelectionBounds();
       const clickedSelectionBounds = !pointerSelection
         && !additiveSelection
@@ -2257,25 +2354,10 @@ ${items}
         && selectedBounds !== null
         && pointInsideBounds(point, selectedBounds, Math.max(8 / camera.scale, 4));
 
-      if (clickedSelectedTarget && resizeHandle) {
-        const originalBounds = targetBounds(clickedSelectedTarget);
+      if (!additiveSelection && resizeHandle) {
+        resizeSession = createResizeSession(resizeHandle, point);
 
-        if (originalBounds) {
-          const handlePosition = handlePoint(originalBounds, resizeHandle);
-          const shape = clickedSelectedTarget.kind === "shape" ? shapes[clickedSelectedTarget.index] : null;
-          resizeSession = {
-            handle: resizeHandle,
-            target: clickedSelectedTarget,
-            originalBounds,
-            pointerOffset: {
-              x: handlePosition.x - point.x,
-              y: handlePosition.y - point.y,
-            },
-            originalShapePoints: shape ? {
-              start: { ...shape.start },
-              end: { ...shape.end },
-            } : undefined,
-          };
+        if (resizeSession) {
           activeResizeHandle = resizeHandle;
           moveAnchorPoint = null;
           canvas.setPointerCapture(event.pointerId);

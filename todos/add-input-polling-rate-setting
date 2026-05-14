@@ -1,6 +1,6 @@
 Priority: 2
 Area: Canvas
-Status: pending
+Status: current
 Depends on: add-tablet-pressure-and-stroke-width
 
 Goal:
@@ -24,4 +24,3 @@ Acceptance criteria:
 Notes:
 
 - If the real bottleneck is event interpolation or smoothing rather than literal polling rate, the implementation may use a differently named internal mechanism as long as the user-facing control honestly addresses the jagged-line problem.
-
