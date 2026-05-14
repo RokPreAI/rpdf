@@ -1,0 +1,28 @@
+Priority: 1
+Area: Canvas
+Status: done
+Depends on: fix-select-tool, add-stroke-selection-editing, add-element-resize
+
+Goal:
+Replace the current overly box-driven select behavior with geometry-aware picking that feels intentional for strokes, lines, arrows, and hollow shapes.
+
+Context:
+The user reported that the current select tool still behaves like a bounding-box picker, which is too loose and not very user friendly. Earlier fixes made selection more reliable, but the remaining problem is interaction quality rather than total breakage.
+
+Expected changes:
+
+- refine click hit testing so it follows actual stroke or shape geometry more closely
+- reduce accidental picks caused by large bounding boxes around thin or hollow items
+- keep image and imported PDF page selection behavior practical while improving vector-item precision
+
+Acceptance criteria:
+
+- Clicking near but not on a thin line, arrow, or freehand stroke does not select it just because the bounding box is nearby.
+- Hollow shapes are selected in a way that feels tied to their visible geometry rather than a large invisible rectangle.
+- Selection hit testing remains stable for images and imported PDF pages.
+- The resulting behavior still supports later marquee and resize flows.
+
+Notes:
+
+- Keep this scoped to hit geometry and click selection quality.
+- Do not mix this with marquee containment policy; that is a separate follow-up task.

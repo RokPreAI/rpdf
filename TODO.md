@@ -1,6 +1,13 @@
 # Current TODOs
 
+- [ ] 1 Canvas require-full-containment-selection
+
 # TODOs
+
+- [ ] 2 Canvas add-stroke-resize
+- [ ] 2 UX add-editable-config-file
+- [ ] 2 UX remove-mode-switch-restore-copy
+- [ ] 3 Canvas add-text-tool
 
 # Done TODOs
 
@@ -36,6 +43,7 @@
 - [x] 2 Canvas add-input-polling-rate-setting
 - [x] 2 Export harden-svg-export-and-save-path
 - [x] 3 UX add-excalidraw-style-tool-and-color-shortcuts
+- [x] 1 Canvas improve-selection-hit-geometry
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste

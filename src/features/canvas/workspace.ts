@@ -1359,6 +1359,67 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     });
   }
 
+  function selectionToleranceForWidth(baseWidth: number) {
+    return Math.max(baseWidth * 0.9, 5 / camera.scale);
+  }
+
+  function pointNearRectangleOutline(bounds: ReturnType<typeof shapeBounds>, point: Point, tolerance: number) {
+    const withinOuterBounds = pointInsideBounds(point, {
+      minX: bounds.minX,
+      minY: bounds.minY,
+      maxX: bounds.maxX,
+      maxY: bounds.maxY,
+    }, tolerance);
+
+    if (!withinOuterBounds) {
+      return false;
+    }
+
+    const innerMinX = bounds.minX + tolerance;
+    const innerMinY = bounds.minY + tolerance;
+    const innerMaxX = bounds.maxX - tolerance;
+    const innerMaxY = bounds.maxY - tolerance;
+    const hasInnerArea = innerMinX < innerMaxX && innerMinY < innerMaxY;
+
+    if (!hasInnerArea) {
+      return true;
+    }
+
+    return !pointInsideBounds(point, {
+      minX: innerMinX,
+      minY: innerMinY,
+      maxX: innerMaxX,
+      maxY: innerMaxY,
+    });
+  }
+
+  function pointNearEllipseOutline(shape: Shape, point: Point, tolerance: number) {
+    const centerX = (shape.start.x + shape.end.x) / 2;
+    const centerY = (shape.start.y + shape.end.y) / 2;
+    const radiusX = Math.max(0.5, Math.abs(shape.end.x - shape.start.x) / 2);
+    const radiusY = Math.max(0.5, Math.abs(shape.end.y - shape.start.y) / 2);
+    const outerRadiusX = radiusX + tolerance;
+    const outerRadiusY = radiusY + tolerance;
+    const outerDistance = (((point.x - centerX) / outerRadiusX) ** 2)
+      + (((point.y - centerY) / outerRadiusY) ** 2);
+
+    if (outerDistance > 1) {
+      return false;
+    }
+
+    const innerRadiusX = radiusX - tolerance;
+    const innerRadiusY = radiusY - tolerance;
+
+    if (innerRadiusX <= 0 || innerRadiusY <= 0) {
+      return true;
+    }
+
+    const innerDistance = (((point.x - centerX) / innerRadiusX) ** 2)
+      + (((point.y - centerY) / innerRadiusY) ** 2);
+
+    return innerDistance >= 1;
+  }
+
   function shapeContainsPoint(shape: Shape, point: Point, tolerance: number) {
     if (shape.kind === "line") {
       return pointToSegmentDistance(point, shape.start, shape.end) <= tolerance;
@@ -1373,19 +1434,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     if (shape.kind === "rectangle") {
       const bounds = shapeBounds(shape);
-      return point.x >= bounds.minX - tolerance
-        && point.x <= bounds.maxX + tolerance
-        && point.y >= bounds.minY - tolerance
-        && point.y <= bounds.maxY + tolerance;
+      return pointNearRectangleOutline(bounds, point, tolerance);
     }
 
-    const centerX = (shape.start.x + shape.end.x) / 2;
-    const centerY = (shape.start.y + shape.end.y) / 2;
-    const radiusX = Math.max(0.5, Math.abs(shape.end.x - shape.start.x) / 2);
-    const radiusY = Math.max(0.5, Math.abs(shape.end.y - shape.start.y) / 2);
-    const outerDistance = (((point.x - centerX) / (radiusX + tolerance)) ** 2)
-      + (((point.y - centerY) / (radiusY + tolerance)) ** 2);
-    return outerDistance <= 1.15;
+    return pointNearEllipseOutline(shape, point, tolerance);
   }
 
   function strokeContainsPoint(stroke: Stroke, point: Point, tolerance: number) {
@@ -1864,7 +1916,7 @@ ${items}
         continue;
       }
 
-      const tolerance = Math.max(vectorItem.baseWidth * 1.5, 8 / camera.scale);
+      const tolerance = selectionToleranceForWidth(vectorItem.baseWidth);
 
       if (target.kind === "shape") {
         const shape = vectorItem as Shape;

@@ -1,0 +1,28 @@
+Priority: 1
+Area: Canvas
+Status: current
+Depends on: improve-selection-hit-geometry, add-marquee-selection, add-multi-select
+
+Goal:
+Change box selection so objects are selected only when the selection box fully contains them, instead of selecting on partial overlap.
+
+Context:
+The user explicitly asked for selection behavior to change from partial-touch selection to full-overlap selection for shapes and strokes. This is a selection-policy change on top of the existing marquee system.
+
+Expected changes:
+
+- update marquee selection rules from intersection-based inclusion to full containment
+- define how freehand strokes are treated under containment, using their real geometry or a justified approximation
+- keep additive marquee behavior consistent with the new containment rule
+
+Acceptance criteria:
+
+- Dragging a marquee across only part of a shape or stroke does not select it.
+- Dragging a marquee that fully contains a shape or stroke does select it.
+- Multi-select and additive marquee behavior still work with the new containment rule.
+- The rule is consistent enough that the user can predict what will and will not be selected.
+
+Notes:
+
+- This task is about marquee or drag-box selection policy, not click hit testing.
+- If stroke containment needs a tolerance margin, keep it explicit and small.
