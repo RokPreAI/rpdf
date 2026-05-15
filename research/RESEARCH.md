@@ -1,6 +1,6 @@
 # rpdf Research
 
-Last updated: 2026-05-10
+Last updated: 2026-05-15
 
 ## Research Scope
 
@@ -47,6 +47,32 @@ The best early strategy is:
 4. keep math speech as a targeted subsystem, not as a vague promise
 
 ## Key Findings
+
+### 0. Linux Tauri pen pressure is likely failing at the WebKitGTK webview layer
+
+This research pass was triggered by a concrete implementation failure in the current repo: the canvas pressure debug readout stayed at `1.000` on a Wacom Intuos in the Linux Tauri build.
+
+The strongest evidence chain is:
+
+- MDN and the Pointer Events spec both describe `PointerEvent.pressure` as the right browser-side API for normalized pen pressure.
+- Wacom’s own web API docs explicitly treat HTML5 Pointer Events as the intended browser path for pen pressure.
+- Tauri on Linux renders through WRY using WebKitGTK.
+- WebKit bug `202789` and changeset `r252366` did land general Pointer Events support for GTK/WPE.
+- WebKit bug `204115` for GTK/WPE Pointer Events states that the feature only works with `pointerType mouse`, while support for touch or pen is missing.
+- Wacom’s Linux GTK documentation separately says native GTK/GDK APIs do expose tablet pressure and device axes on Linux.
+
+The likely interpretation is:
+
+- the tablet itself may be working correctly at the Linux/GTK level
+- but the Linux WebKitGTK webview layer may be surfacing the stylus as mouse-like input inside the Tauri frontend
+- if that is happening, browser-side pressure logic in the canvas cannot recover the real pen pressure because the wrong event shape is arriving in JavaScript
+
+This also explains the current repo behavior in a way that matches the observed `1.000` readout:
+
+- the app currently normalizes mouse-like input to full width
+- if the pen arrives through WebKitGTK as mouse-like input, the debug readout will stay pinned high
+
+So this is probably not a JS smoothing problem first. It is a platform/input-path problem first.
 
 ### 1. The product gap is real, but it is narrow
 
@@ -136,6 +162,48 @@ That matters because it means the browser-side canvas inside Tauri is a realisti
 - future tilt/twist extensions if needed later
 
 This does not solve the PDF side, but it does validate the canvas interaction model already present in the repo.
+
+Revision from the 2026-05-15 pressure-debug pass:
+
+- the browser API remains the correct abstraction in general
+- but Linux Tauri specifically depends on WebKitGTK, and WebKitGTK pointer-event support for pen/touch is a concrete risk area
+- so the canvas interaction model is still valid conceptually, but the current Linux webview stack is now a known implementation risk for true tablet pressure fidelity
+
+## Platform-Specific Finding: Linux Tauri Tablet Pressure
+
+### What the standards and vendor docs say
+
+- The Pointer Events spec says that if a platform does not support pressure, `pressure` must fall back to `0.5` while active and `0` otherwise.
+- MDN mirrors that behavior and describes pressure as normalized from `0` to `1`.
+- Wacom’s web documentation treats HTML5 Pointer Events as the intended way to read pen pressure in browser applications.
+
+Inference:
+
+If the browser receives the stylus correctly, browser-side pressure is a valid primary path.
+
+### What the Linux Tauri stack changes
+
+Tauri on Linux renders through WRY using WebKitGTK, not Chromium.
+
+The important nuance is:
+
+- WebKit bug `202789` plus changeset `r252366` enabled Pointer Events support for GTK/WPE in general.
+- But the same bug thread explicitly noted that it only worked with `pointerType=mouse`, and WebKit bug `204115` was then opened specifically to track the missing touch/pen support.
+
+So the likely state is not “GTK WebKit has no Pointer Events at all.”
+It is “GTK WebKit has Pointer Events, but the non-mouse stylus semantics needed for real tablet pressure are still incomplete.”
+
+Inference:
+
+If the pen is being downgraded to mouse semantics in WebKitGTK, then the canvas frontend will never see trustworthy pressure through ordinary browser Pointer Events, no matter how correct the JavaScript is.
+
+### What native Linux GTK says
+
+Wacom’s Linux GTK documentation says GTK/GDK exposes pressure-sensitive stylus input and device axes, and that applications can query tablet data through `GdkDevice`.
+
+Implication:
+
+The same machine may have real tablet pressure available natively even when the embedded WebKitGTK frontend cannot access it correctly.
 
 ## Existing Tools And Similar Projects
 
@@ -291,10 +359,16 @@ MathCAT looks especially relevant if synchronized navigation/highlighting become
 - Speech Rule Engine: https://speechruleengine.org/
 - MathCAT callers guide: https://nsoiffer.github.io/MathCAT/callers.html
 - W3C PDF3 reading-order guidance: https://www.w3.org/WAI/WCAG21/Techniques/pdf/PDF3
+- W3C Pointer Events spec: https://w3c.github.io/pointerevents/
 - Tesseract quality guide: https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html
 - Tesseract input formats: https://tesseract-ocr.github.io/tessdoc/InputFormats.html
 - Paper2Audio about: https://www.paper2audio.com/about
 - MDN `PointerEvent.pressure`: https://developer.mozilla.org/en-US/docs/Web/API/PointerEvent/pressure
+- Wacom HTML5 Pointer Events basics: https://developer-docs.wacom.com/docs/icbt/web/web-api-basics/
+- Wacom Linux GTK overview: https://developer-docs.wacom.com/docs/icbt/linux/gtk/gtk-overview/
+- Wacom Linux GTK basics: https://developer-docs.wacom.com/docs/icbt/linux/gtk/gtk-basics/
+- Tauri architecture/platform note: https://github.com/tauri-apps/tauri
+- WebKit bug 204115: https://bugs.webkit.org/show_bug.cgi?id=204115
 
 ## Saved Material
 
@@ -326,6 +400,7 @@ What becomes more concrete:
 - the app needs a deliberate document-understanding pipeline, not just a renderer
 - math support should be phased and measurable
 - licensing must be considered early when choosing the PDF engine
+- Linux tablet pressure may need a native input bridge instead of relying only on browser Pointer Events inside the Tauri webview
 
 ## Realistic Approaches
 
@@ -343,6 +418,11 @@ Why it looks realistic:
 - fits the current repo shape
 - keeps stylus interaction where pointer APIs are already good
 - keeps document parsing and file output on the Rust side
+
+Pressure-related caveat from the 2026-05-15 pass:
+
+- this remains a reasonable default architecture
+- but Linux tablet pressure may need a native Rust/GTK bridge into the canvas instead of depending only on WebKitGTK Pointer Events
 
 ### Approach B: Ship a strong V1 without “full math understanding”
 
@@ -378,6 +458,19 @@ Why this is realistic:
 - it matches the evidence from PDF structure and OCR limitations
 - it gives the UI a principled way to explain what it can and cannot do
 
+### Approach D: Use a hybrid input path on Linux
+
+Use:
+
+- browser-side canvas rendering and interaction for the general case
+- native GTK/GDK pressure capture on Linux when stylus fidelity matters and the webview path is insufficient
+
+Why it looks realistic:
+
+- it matches Wacom’s Linux GTK guidance
+- it respects the current Tauri architecture instead of forcing a full rewrite immediately
+- it isolates the native complexity to the one capability that appears unreliable in the Linux webview path
+
 ## Approaches To Avoid
 
 ### Avoid: “PDF mode is just the canvas with pages dropped in”
@@ -396,6 +489,10 @@ That is the weakest assumption in the whole idea. The research contradicts it.
 
 MuPDF in particular is attractive technically but has licensing implications that should be treated as a first-order decision.
 
+### Avoid: trying to fix Linux tablet pressure only by tuning JavaScript math
+
+If the raw event is already arriving as mouse-like input from the webview, smoothing or width remapping in JS will not recover real pen pressure.
+
 ## Risks That Matter For Planning
 
 1. PDF engine choice may become an expensive reversal if annotation/export behavior or licensing turns out wrong.
@@ -403,6 +500,7 @@ MuPDF in particular is attractive technically but has licensing implications tha
 3. Highlight synchronization may look polished on clean PDFs and break badly on real technical material.
 4. OCR fallback may disappoint unless preprocessing and user communication are handled well.
 5. Cross-platform stylus behavior may still differ even if pointer pressure is broadly supported in principle.
+6. Linux WebKitGTK may not expose pen semantics reliably enough for a tablet-first product without native input help.
 
 ## Assumptions From IDEA.md To Revisit
 
@@ -410,6 +508,7 @@ MuPDF in particular is attractive technically but has licensing implications tha
 2. “Current spoken content is highlighted” needs a confidence model, not a universal promise.
 3. “Export recolored PDFs” should later be checked against the selected PDF engine’s capabilities and output quality.
 4. “Low resource use” may conflict with heavy OCR and advanced document-understanding passes unless those are designed as optional or on-demand steps.
+5. “Pressure sensitivity is essential” should now be read as a product requirement that may force platform-specific native input work on Linux.
 
 ## Open Questions
 
@@ -418,6 +517,8 @@ MuPDF in particular is attractive technically but has licensing implications tha
 3. Should V1 support importing PDF pages into the canvas as raster snapshots only, or preserve richer page metadata for recoloring/export later?
 4. Which PDF engine best matches the license goals of this project?
 5. How much of the math-reading problem should be solved locally in V1 versus explicitly deferred?
+6. In the current Linux Tauri build, does the raw frontend event report `pointerType: "mouse"` for the Wacom stylus?
+7. Is the lightest good fix a GTK/GDK pressure bridge into the existing canvas, or does true tablet-first Linux behavior eventually justify a more native canvas path?
 
 ## Research Log
 
@@ -427,3 +528,6 @@ MuPDF in particular is attractive technically but has licensing implications tha
 - Checked Speech Rule Engine and MathCAT as math-speech candidates.
 - Checked W3C reading-order guidance and Tesseract OCR limitations.
 - Saved the reusable external notes into `research/source-notes.md`.
+- 2026-05-15 narrow pass:
+  - checked the Pointer Events spec, MDN pressure semantics, Wacom web Pointer Events docs, Wacom Linux GTK tablet docs, Tauri’s Linux/WebKitGTK architecture note, and WebKit bug `204115`
+  - concluded that the current `1.000` pressure reading is likely caused by Linux WebKitGTK pointer-event limitations in the Tauri webview path rather than by the Wacom tablet lacking OS-level pressure support

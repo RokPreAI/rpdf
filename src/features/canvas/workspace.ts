@@ -167,6 +167,11 @@ type PendingTextPlacement = {
   pointerId: number;
 };
 
+type PenZoomSession = {
+  pointerId: number;
+  lastClientY: number;
+};
+
 type NativePressureSample = {
   pressure: number;
   source: string;
@@ -210,7 +215,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <canvas class="canvas-surface"></canvas>
 
       <div class="canvas-toolbar">
-        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, text via toolbar, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo
+        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} or X pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, text via toolbar, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel or Ctrl+pen drag: zoom | Ctrl+Z: undo
         <span id="pressure-debug-value" class="pressure-debug-value">Pressure: 0.000</span>
       </div>
 
@@ -234,7 +239,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       </div>
 
       <div class="canvas-pickers">
-        <button class="tool-picker active" data-tool="pen" type="button" title="Pen (${configuredToolShortcuts.pen.toUpperCase()})" aria-label="Pen (${configuredToolShortcuts.pen.toUpperCase()})">✎</button>
+        <button class="tool-picker active" data-tool="pen" type="button" title="Pen (${configuredToolShortcuts.pen.toUpperCase()} or X)" aria-label="Pen (${configuredToolShortcuts.pen.toUpperCase()} or X)">✎</button>
         <button class="tool-picker" data-tool="rectangle" type="button" title="Rectangle (${configuredToolShortcuts.rectangle.toUpperCase()})" aria-label="Rectangle (${configuredToolShortcuts.rectangle.toUpperCase()})">▭</button>
         <button class="tool-picker" data-tool="ellipse" type="button" title="Ellipse (${configuredToolShortcuts.ellipse.toUpperCase()})" aria-label="Ellipse (${configuredToolShortcuts.ellipse.toUpperCase()})">◯</button>
         <button class="tool-picker" data-tool="line" type="button" title="Line (${configuredToolShortcuts.line.toUpperCase()})" aria-label="Line (${configuredToolShortcuts.line.toUpperCase()})">／</button>
@@ -295,6 +300,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let marqueeSession: MarqueeSession | null = null;
   let activeTextEditor: TextEditorSession | null = null;
   let pendingTextPlacement: PendingTextPlacement | null = null;
+  let penZoomSession: PenZoomSession | null = null;
   let isPanning = false;
   let isSpaceDown = false;
   let devicePixelRatioValue = window.devicePixelRatio || 1;
@@ -729,6 +735,18 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   function handleNativePressureSample(sample: NativePressureSample) {
     latestNativePressureSample = sample;
     latestNativePressureReceivedAtMs = Date.now();
+  }
+
+  function applyZoomAtScreenPoint(clientX: number, clientY: number, deltaY: number) {
+    const rect = canvas.getBoundingClientRect();
+    const screenX = clientX - rect.left;
+    const screenY = clientY - rect.top;
+    const worldBeforeZoom = screenToWorld(clientX, clientY);
+    const zoomFactor = Math.exp(deltaY * 0.01);
+
+    camera.scale = clamp(camera.scale * zoomFactor, 0.1, 10);
+    camera.x = screenX - worldBeforeZoom.x * camera.scale;
+    camera.y = screenY - worldBeforeZoom.y * camera.scale;
   }
 
   function setupPickers() {
@@ -3029,6 +3047,16 @@ ${items}
       commitTextEditor();
     }
 
+    if (selectedTool === "pen" && event.ctrlKey && event.button === 0) {
+      penZoomSession = {
+        pointerId: event.pointerId,
+        lastClientY: event.clientY,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      canvas.style.cursor = "ns-resize";
+      return;
+    }
+
     if (selectedTool === "pan" || isSpaceDown || event.button === 1 || event.button === 2) {
       isPanning = true;
       canvas.setPointerCapture(event.pointerId);
@@ -3133,6 +3161,18 @@ ${items}
     latestBrowserRawPressure = event.pressure;
     setPressureDebugValue(getPointerPressure(event, pressureSensitivityEnabled, readFreshNativePressure()));
 
+    if (penZoomSession && penZoomSession.pointerId === event.pointerId) {
+      const deltaY = event.clientY - penZoomSession.lastClientY;
+      penZoomSession.lastClientY = event.clientY;
+
+      if (Math.abs(deltaY) > 0) {
+        applyZoomAtScreenPoint(event.clientX, event.clientY, deltaY);
+        redraw();
+      }
+
+      return;
+    }
+
     if (isPanning) {
       camera.x += event.movementX;
       camera.y += event.movementY;
@@ -3214,6 +3254,19 @@ ${items}
     latestBrowserPointerType = event.pointerType || "unknown";
     latestBrowserRawPressure = event.pressure;
     setPressureDebugValue(getPointerPressure(event, pressureSensitivityEnabled, readFreshNativePressure()));
+
+    if (penZoomSession?.pointerId === event.pointerId) {
+      penZoomSession = null;
+      redraw();
+      updateCursor();
+
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+
+      return;
+    }
+
     const releasePoint = screenToWorld(event.clientX, event.clientY);
 
     if (pendingTextPlacement?.pointerId === event.pointerId) {
@@ -3245,6 +3298,7 @@ ${items}
     resizeSession = null;
     marqueeSession = null;
     pendingTextPlacement = null;
+    penZoomSession = null;
     isPanning = false;
     activeResizeHandle = null;
     redraw();
@@ -3265,6 +3319,7 @@ ${items}
     resizeSession = null;
     marqueeSession = null;
     pendingTextPlacement = null;
+    penZoomSession = null;
     isPanning = false;
     activeResizeHandle = null;
     redraw();
@@ -3338,6 +3393,12 @@ ${items}
     }
 
     const shortcutKey = event.key.toLowerCase();
+    if (shortcutKey === "x") {
+      event.preventDefault();
+      setActiveTool(toolButtons, "pen");
+      return;
+    }
+
     const shortcutTool = toolShortcutByKey[shortcutKey];
 
     if (shortcutTool) {
