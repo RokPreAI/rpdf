@@ -1,0 +1,31 @@
+Priority: 1
+Area: Reading
+Status: done
+Depends on: add-tts-and-reliability-pipeline, fix-read-page-action
+
+Goal:
+Fix the current `Read page` runtime failure so extracted PDF text can actually be spoken instead of failing with an error and only pointing the user at a log file.
+
+Context:
+The user reports that text extraction succeeds, but triggering `Read page` produces an error state rather than speech. That means the current reading pipeline is partially working: extraction is alive, but the playback backend or its runtime contract is broken. The immediate task is to make the existing reading path work reliably and visibly before adding any new cloud speech architecture.
+
+Expected changes:
+
+- reproduce the current runtime TTS failure and identify whether it comes from the Rust local speech path, the browser fallback path, or backend availability detection
+- inspect the current error propagation path so the real failure is visible in-app instead of only in an external log reference
+- fix the failing local playback path or the fallback decision logic
+- make the reading status message explicit about which backend was attempted and why it failed
+- verify that readable extracted text can actually start playback on the target Linux runtime
+
+Acceptance criteria:
+
+- On a readable PDF page with extracted text, pressing `Read page` starts audible playback or shows a direct actionable reason in the app.
+- The app does not fail with a vague generic error when the root cause is known.
+- The UI identifies whether local native speech, browser speech, or no speech backend was used.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Keep this task focused on restoring the current local reading pipeline.
+- Do not switch the main architecture to a cloud TTS provider in this task.
+- Human runtime verification is required because this is an actual playback issue, not just a static code-path bug.

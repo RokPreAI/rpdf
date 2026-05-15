@@ -580,6 +580,30 @@ export function mountPdfWorkspace(
     return readPdfPreferences().speechRate;
   }
 
+  function browserSpeechAvailable() {
+    return "speechSynthesis" in window;
+  }
+
+  function describeSpeechError(error: unknown) {
+    if (typeof error === "string") {
+      return error;
+    }
+
+    if (error && typeof error === "object") {
+      if ("message" in error && typeof error.message === "string") {
+        return error.message;
+      }
+
+      try {
+        return JSON.stringify(error);
+      } catch {
+        return String(error);
+      }
+    }
+
+    return String(error);
+  }
+
   function syncRecolorControls() {
     recolorEnabledInput.checked = state.recolor.enabled;
     recolorForegroundInput.value = state.recolor.foreground;
@@ -596,7 +620,7 @@ export function mountPdfWorkspace(
     extraction: PageTextExtraction,
     requestId: number,
   ) {
-    if (!("speechSynthesis" in window)) {
+    if (!browserSpeechAvailable()) {
       state.isSpeaking = false;
       state.activeSpeechBackend = null;
       state.readingStatus = speechAvailabilityMessage();
@@ -679,18 +703,26 @@ export function mountPdfWorkspace(
       renderReadingPanel();
       return;
     } catch (error) {
+      const nativeSpeechError = describeSpeechError(error);
       console.error("Native local speech failed:", error);
 
       if (requestId !== activeSpeechRequestId) {
         return;
       }
-    }
 
-    state.readingStatus = "Native local speech was unavailable. Falling back to webview speech if possible.";
-    renderReadingPanel();
+      state.isSpeaking = false;
+      state.activeSpeechBackend = null;
 
-    if (!startBrowserSpeech(text, extraction, requestId)) {
-      state.readingStatus = speechAvailabilityMessage();
+      if (browserSpeechAvailable()) {
+        state.readingStatus = `${nativeSpeechError} Falling back to webview speech.`;
+        renderReadingPanel();
+
+        if (startBrowserSpeech(text, extraction, requestId)) {
+          return;
+        }
+      }
+
+      state.readingStatus = `${nativeSpeechError} Webview speech is unavailable in this runtime.`;
       renderReadingPanel();
     }
   }
