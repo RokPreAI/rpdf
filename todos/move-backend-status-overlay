@@ -1,0 +1,29 @@
+Priority: 2
+Area: UX
+Status: done
+Depends on: split-main-into-shell-and-modes
+
+Goal:
+Move the shared backend-status readout out of the shell header and anchor it as a workspace overlay in the bottom-right corner.
+
+Context:
+The user wants the backend status to behave more like an in-canvas status badge, similar to how the canvas toolbar sits in a workspace corner, instead of occupying header space.
+
+Expected changes:
+
+- move the `#backend-status` element out of the header action flow
+- place it inside `#workspace-root`
+- style it as a bottom-right overlay with the same non-interactive status-badge behavior across modes
+- preserve narrow-screen readability
+
+Acceptance criteria:
+
+- The backend status appears in the bottom-right of the workspace instead of inside the header.
+- It does not interfere with pointer interaction in Canvas or PDF mode.
+- Responsive CSS still keeps the status readable on smaller windows.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Keep this slice to layout and placement only.
+- Do not widen it into backend-status behavior or copy changes.

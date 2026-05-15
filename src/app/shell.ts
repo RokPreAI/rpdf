@@ -66,11 +66,12 @@ export function mountAppShell(root: HTMLElement) {
               <button id="autosave-restore-button" class="project-action-button recovery-missing" type="button">Restore autosave</button>
               <button id="autosave-clear-button" class="project-action-button secondary" type="button" hidden>Clear recovery</button>
             </div>
-            <div id="backend-status" class="backend-status">Loading backend status...</div>
           </div>
         </header>
 
-        <section id="workspace-root" class="workspace-root"></section>
+        <section id="workspace-root" class="workspace-root">
+          <div id="backend-status" class="backend-status">Loading backend status...</div>
+        </section>
       </main>
     </div>
   `;

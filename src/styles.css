@@ -130,10 +130,19 @@ button {
 }
 
 .backend-status {
-  max-width: 360px;
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 4;
+  max-width: min(360px, calc(100% - 24px));
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-panel);
   font-size: 0.82rem;
   color: var(--fg-dark);
   text-align: right;
+  user-select: none;
+  pointer-events: none;
 }
 
 .header-actions {
@@ -227,10 +236,6 @@ button {
 
 .recovery-row {
   margin-left: auto;
-}
-
-.backend-status {
-  width: 100%;
 }
 
 .workspace-root {
@@ -805,8 +810,7 @@ button {
     align-items: stretch;
   }
 
-  .project-path-field,
-  .backend-status {
+  .project-path-field {
     width: 100%;
   }
 
@@ -817,10 +821,6 @@ button {
   .project-action-row {
     width: 100%;
     justify-content: flex-start;
-  }
-
-  .backend-status {
-    text-align: left;
   }
 
   .pdf-viewer-header,
@@ -859,6 +859,14 @@ button {
     left: 12px;
     bottom: 12px;
     font-size: 12px;
+  }
+
+  .backend-status {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    max-width: none;
+    text-align: left;
   }
 
   .stroke-width-control {
