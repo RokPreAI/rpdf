@@ -1,5 +1,6 @@
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { getActiveAppConfig, normalizedColorShortcutEntries, normalizedToolShortcutEntries } from "../../app/config";
 import type {
@@ -166,10 +167,19 @@ type PendingTextPlacement = {
   pointerId: number;
 };
 
+type NativePressureSample = {
+  pressure: number;
+  source: string;
+  deviceName?: string | null;
+  updatedAtMs: number;
+  isStylusLike: boolean;
+};
+
 type Tool = "pen" | "rectangle" | "ellipse" | "line" | "arrow" | "text" | "select" | "pan" | "eraser";
 type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
 const TEXT_FONT_FAMILY = "\"JetBrains Mono\", \"Fira Code\", monospace";
+const NATIVE_PRESSURE_FRESHNESS_MS = 96;
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
   const appConfig = getActiveAppConfig();
@@ -201,6 +211,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
       <div class="canvas-toolbar">
         Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, text via toolbar, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel: zoom | Ctrl+Z: undo
+        <span id="pressure-debug-value" class="pressure-debug-value">Pressure: 0.000</span>
       </div>
 
       <div class="stroke-width-control">
@@ -290,6 +301,11 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let baseStrokeWidth = preferences.defaultStrokeWidth;
   let inputQuality = preferences.defaultInputQuality;
   let pressureSensitivityEnabled = preferences.pressureSensitivityEnabled;
+  let latestNativePressureSample: NativePressureSample | null = null;
+  let latestNativePressureReceivedAtMs = 0;
+  let latestBrowserPointerType = "none";
+  let latestBrowserRawPressure = 0;
+  let unlistenNativePressure: UnlistenFn | null = null;
 
   const colorVariableByButtonId: Record<string, string> = {
     "color-picker-fg": "--fg",
@@ -623,6 +639,32 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
   }
 
+  function readFreshNativePressure() {
+    if (!latestNativePressureSample) {
+      return null;
+    }
+
+    if (Date.now() - latestNativePressureReceivedAtMs > NATIVE_PRESSURE_FRESHNESS_MS) {
+      return null;
+    }
+
+    return Math.max(0, Math.min(latestNativePressureSample.pressure, 1));
+  }
+
+  function setPressureDebugValue(pressure: number) {
+    const pressureDebugValue = container.querySelector<HTMLElement>("#pressure-debug-value");
+
+    if (!pressureDebugValue) {
+      return;
+    }
+
+    const nativePressure = readFreshNativePressure();
+    const nativeLabel = nativePressure === null || !latestNativePressureSample
+      ? "native none"
+      : `native ${latestNativePressureSample.source.toLowerCase()} ${nativePressure.toFixed(3)}`;
+    pressureDebugValue.textContent = `Pressure: ${pressure.toFixed(3)} | browser ${latestBrowserPointerType} ${latestBrowserRawPressure.toFixed(3)} | ${nativeLabel}`;
+  }
+
   function strokeSampleSpacing() {
     return (
       inputQuality >= 5 ? 1.5
@@ -682,6 +724,11 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     const coalescedEvents = event.getCoalescedEvents();
 
     return coalescedEvents.length > 0 ? coalescedEvents : [event];
+  }
+
+  function handleNativePressureSample(sample: NativePressureSample) {
+    latestNativePressureSample = sample;
+    latestNativePressureReceivedAtMs = Date.now();
   }
 
   function setupPickers() {
@@ -2965,7 +3012,18 @@ ${items}
 
   const onPointerDown = (event: PointerEvent) => {
     const point = screenToWorld(event.clientX, event.clientY);
-    const pressure = getPointerPressure(event, pressureSensitivityEnabled);
+    latestBrowserPointerType = event.pointerType || "unknown";
+    latestBrowserRawPressure = event.pressure;
+    const pressure = getPointerPressure(event, pressureSensitivityEnabled, readFreshNativePressure());
+    setPressureDebugValue(pressure);
+    console.info("[canvas pressure] pointerdown", {
+      browserPointerType: event.pointerType,
+      browserPressure: event.pressure,
+      nativePressure: readFreshNativePressure(),
+      nativeSource: latestNativePressureSample?.source ?? null,
+      nativeDeviceName: latestNativePressureSample?.deviceName ?? null,
+      nativeStylusLike: latestNativePressureSample?.isStylusLike ?? false,
+    });
 
     if (activeTextEditor && !activeTextEditor.element.contains(event.target as Node | null)) {
       commitTextEditor();
@@ -3071,6 +3129,10 @@ ${items}
   };
 
   const onPointerMove = (event: PointerEvent) => {
+    latestBrowserPointerType = event.pointerType || "unknown";
+    latestBrowserRawPressure = event.pressure;
+    setPressureDebugValue(getPointerPressure(event, pressureSensitivityEnabled, readFreshNativePressure()));
+
     if (isPanning) {
       camera.x += event.movementX;
       camera.y += event.movementY;
@@ -3141,7 +3203,7 @@ ${items}
     for (const sample of pointerSamples(event)) {
       appendPointToCurrentStroke(
         screenToWorld(sample.clientX, sample.clientY),
-        getPointerPressure(sample, pressureSensitivityEnabled),
+        getPointerPressure(sample, pressureSensitivityEnabled, readFreshNativePressure()),
       );
     }
 
@@ -3149,6 +3211,9 @@ ${items}
   };
 
   const onPointerUp = (event: PointerEvent) => {
+    latestBrowserPointerType = event.pointerType || "unknown";
+    latestBrowserRawPressure = event.pressure;
+    setPressureDebugValue(getPointerPressure(event, pressureSensitivityEnabled, readFreshNativePressure()));
     const releasePoint = screenToWorld(event.clientX, event.clientY);
 
     if (pendingTextPlacement?.pointerId === event.pointerId) {
@@ -3191,6 +3256,9 @@ ${items}
   };
 
   const onPointerCancel = () => {
+    latestBrowserPointerType = "cancel";
+    latestBrowserRawPressure = 0;
+    setPressureDebugValue(0);
     currentStroke = null;
     currentShape = null;
     moveAnchorPoint = null;
@@ -3295,6 +3363,13 @@ ${items}
 
   setupPickers();
   resizeCanvas();
+  void listen<NativePressureSample>("rpdf://native-pressure", (event) => {
+    handleNativePressureSample(event.payload);
+  }).then((unlisten) => {
+    unlistenNativePressure = unlisten;
+  }).catch((error) => {
+    console.warn("Could not start native pressure listener:", error);
+  });
   window.addEventListener("paste", onPaste);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
@@ -3579,6 +3654,7 @@ ${items}
       window.removeEventListener("rpdf:preferences-changed", onPreferencesChanged as EventListener);
       window.removeEventListener("rpdf:canvas-import-pdf-page", onPdfPageImport as EventListener);
       window.removeEventListener("rpdf:request-canvas-svg-export", exportSvg as EventListener);
+      unlistenNativePressure?.();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
@@ -3590,17 +3666,21 @@ ${items}
   };
 }
 
-function getPointerPressure(event: PointerEvent, pressureSensitivityEnabled: boolean) {
+function getPointerPressure(
+  event: PointerEvent,
+  pressureSensitivityEnabled: boolean,
+  nativePressure: number | null,
+) {
   if (!pressureSensitivityEnabled) {
     return 1;
   }
 
-  if (event.pointerType === "mouse") {
-    return 1;
+  if (event.pointerType === "mouse" && nativePressure !== null) {
+    return Math.max(0.2, nativePressure);
   }
 
   if (event.pressure <= 0) {
-    return 0.25;
+    return nativePressure !== null ? Math.max(0.2, nativePressure) : 0.25;
   }
 
   return Math.max(0.2, Math.min(event.pressure, 1));

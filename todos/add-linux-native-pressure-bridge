@@ -1,0 +1,34 @@
+Priority: 1
+Area: Canvas
+Status: done
+Depends on: add-tablet-pressure-and-stroke-width, add-pressure-sensitivity-toggle
+
+Goal:
+Restore real pressure-sensitive drawing on Linux by reading tablet pressure natively on the Rust/GTK side and feeding normalized pressure values into the existing canvas stroke pipeline.
+
+Context:
+Research and local debugging now point to a platform-specific input problem, not just pressure math. In the current Linux Tauri build, the frontend pressure debug readout stays fixed at `1.000` on a Wacom Intuos. The repo research concludes that Tauri on Linux uses WebKitGTK through WRY, and WebKitGTK Pointer Events support appears to expose general pointer events while still missing correct pen/touch semantics in the relevant bug trail. Wacom’s Linux GTK docs indicate that native GTK/GDK APIs can access tablet pressure directly.
+
+Expected changes:
+
+- confirm the raw frontend event shape during debug, especially whether the stylus is arriving as `pointerType: "mouse"`
+- add a Linux-specific native pressure capture path on the Rust side using the underlying GTK/GDK input APIs available in the Tauri window stack
+- bridge normalized pressure samples into the frontend through a narrow Tauri event or command path
+- update canvas stroke creation and live point sampling to prefer the native Linux pressure source when available
+- preserve the existing browser-side pointer-pressure path as fallback for platforms where it works
+- remove or reduce temporary pressure-debug instrumentation once the real path is verified
+
+Acceptance criteria:
+
+- The implementation can demonstrate whether the raw frontend stylus event is arriving as mouse-like input or not.
+- On Linux with a Wacom-style tablet, the app can access pressure values that vary meaningfully instead of staying fixed at `1.000`.
+- With pressure sensitivity enabled, harder pen pressure produces visibly thicker strokes up to the selected maximum width.
+- With pressure sensitivity disabled, strokes still remain constant-width.
+- The fallback browser-side path still works on platforms or setups where native Linux pressure bridging is unavailable.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Keep this task focused on pressure first; tilt, rotation, eraser-end differentiation, and pad buttons are out of scope.
+- Prefer the lightest native bridge that fits the current Tauri architecture instead of redesigning the whole canvas renderer.
+- If the GTK/GDK access path turns out to be materially blocked by Tauri/WRY integration limits, the worker should document the exact blocker and add the next narrower follow-up task instead of guessing.

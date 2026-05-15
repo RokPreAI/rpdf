@@ -19,6 +19,7 @@ use app::commands::{
     render_pdf_page,
 };
 use app::services::AppServices;
+use infrastructure::linux_pressure;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,6 +27,13 @@ pub fn run() {
         .manage(AppServices::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            if let Err(error) = linux_pressure::install(&app.handle()) {
+                eprintln!("Linux native pressure bridge was not installed: {error}");
+            }
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_app_bootstrap,
             get_pdf_backend_status,

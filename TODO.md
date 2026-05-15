@@ -4,6 +4,7 @@
 
 # Done TODOs
 
+- [x] 1 Canvas add-linux-native-pressure-bridge
 - [x] 0 Architecture architecture-foundation-and-pdfium-gate
 - [x] 0 Storage versioned-project-and-session-model
 - [x] 1 App split-main-into-shell-and-modes

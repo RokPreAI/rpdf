@@ -3098,6 +3098,9 @@ dependencies = [
 name = "rpdf"
 version = "0.1.0"
 dependencies = [
+ "gdk",
+ "glib",
+ "gtk",
  "pdfium-render",
  "rfd",
  "serde",
@@ -3106,6 +3109,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-opener",
+ "webkit2gtk",
 ]
 
 [[package]]
