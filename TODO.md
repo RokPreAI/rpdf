@@ -2,8 +2,11 @@
 
 # TODOs
 
+- [ ] 1 Export fix-svg-export-direct-path-flow
+
 # Done TODOs
 
+- [x] 1 Storage fix-project-save-load-path-flow
 - [x] 1 Canvas add-linux-native-pressure-bridge
 - [x] 0 Architecture architecture-foundation-and-pdfium-gate
 - [x] 0 Storage versioned-project-and-session-model
