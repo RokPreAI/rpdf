@@ -294,12 +294,30 @@ button {
   gap: 6px;
 }
 
+.stroke-control-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .stroke-width-control input {
   width: 180px;
 }
 
 .stroke-width-control output {
   color: var(--fg-dark);
+}
+
+.pressure-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.pressure-toggle input {
+  width: auto;
+  margin: 0;
 }
 
 .canvas-text-editor {

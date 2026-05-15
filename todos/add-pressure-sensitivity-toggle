@@ -1,0 +1,32 @@
+Priority: 1
+Area: Canvas
+Status: done
+Depends on: add-tablet-pressure-and-stroke-width, add-selection-style-editing
+
+Goal:
+Add a toggleable pressure-sensitivity option inside the compact stroke-width control, and make the stroke-width slider define the maximum stroke width when pressure is enabled.
+
+Context:
+Pressure-aware drawing exists in first-pass form already, but the user now wants direct control over whether pressure sensitivity is active at all. They also want the interaction model clarified: the selected stroke width should be the maximum width reached at full pressure, not a separate unrelated base width.
+
+Expected changes:
+
+- add a pressure-sensitivity toggle next to the stroke-width slider in the `stroke-width-control` UI
+- persist the pressure-sensitivity preference alongside the existing canvas preferences
+- update stroke creation so pressure-enabled drawing maps full pressure to 100 percent of the selected stroke width
+- keep mouse or non-pressure devices drawing sensibly when pressure sensitivity is off or unavailable
+- ensure selection-aware stroke-width editing keeps consistent semantics with the pressure toggle
+
+Acceptance criteria:
+
+- The stroke-width control shows a visible pressure-sensitivity toggle beside the width slider.
+- Turning the toggle off makes new strokes use a constant width equal to the selected stroke width.
+- Turning the toggle on makes maximum pen pressure produce the selected stroke width.
+- Lower pressure produces narrower marks without exceeding the selected stroke width.
+- The preference survives reloads through the existing settings persistence path.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass after the change.
+
+Notes:
+
+- Keep this scoped to new-stroke behavior first; do not widen into retroactive reprocessing of existing strokes unless the implementation naturally requires it.
+- Preserve sane fallback behavior for devices that do not report meaningful pressure.

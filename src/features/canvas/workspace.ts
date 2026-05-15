@@ -206,7 +206,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <div class="stroke-width-control">
         <label class="stroke-control-field" for="stroke-width">
           <span>Stroke width</span>
-          <input id="stroke-width" type="range" min="1" max="24" step="1" value="3" />
+          <div class="stroke-control-row">
+            <input id="stroke-width" type="range" min="1" max="24" step="1" value="3" />
+            <label class="pressure-toggle" for="pressure-sensitivity">
+              <input id="pressure-sensitivity" type="checkbox" checked />
+              <span>Pressure</span>
+            </label>
+          </div>
           <output id="stroke-width-value">3px</output>
         </label>
         <label class="stroke-control-field" for="input-quality">
@@ -283,6 +289,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let devicePixelRatioValue = window.devicePixelRatio || 1;
   let baseStrokeWidth = preferences.defaultStrokeWidth;
   let inputQuality = preferences.defaultInputQuality;
+  let pressureSensitivityEnabled = preferences.pressureSensitivityEnabled;
 
   const colorVariableByButtonId: Record<string, string> = {
     "color-picker-fg": "--fg",
@@ -356,6 +363,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return {
         defaultStrokeWidth: 3,
         defaultInputQuality: 3,
+        pressureSensitivityEnabled: true,
         defaultShapeKind: "rectangle" as ShapeKind,
         defaultCanvasColor: fallbackColor,
       };
@@ -365,6 +373,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       const parsed = JSON.parse(rawValue) as Partial<{
         defaultStrokeWidth: number;
         defaultInputQuality: number;
+        pressureSensitivityEnabled: boolean;
         defaultShapeKind: ShapeKind;
         defaultCanvasColor: string;
       }>;
@@ -372,6 +381,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return {
         defaultStrokeWidth: typeof parsed.defaultStrokeWidth === "number" ? parsed.defaultStrokeWidth : 3,
         defaultInputQuality: clampInputQuality(parsed.defaultInputQuality ?? 3),
+        pressureSensitivityEnabled: parsed.pressureSensitivityEnabled ?? true,
         defaultShapeKind: parsed.defaultShapeKind ?? "rectangle",
         defaultCanvasColor: parsed.defaultCanvasColor ?? fallbackColor,
       };
@@ -380,6 +390,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       return {
         defaultStrokeWidth: 3,
         defaultInputQuality: 3,
+        pressureSensitivityEnabled: true,
         defaultShapeKind: "rectangle" as ShapeKind,
         defaultCanvasColor: fallbackColor,
       };
@@ -389,6 +400,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   function writePreferences(update: Partial<{
     defaultStrokeWidth: number;
     defaultInputQuality: number;
+    pressureSensitivityEnabled: boolean;
     defaultShapeKind: ShapeKind;
     defaultCanvasColor: string;
   }>) {
@@ -603,6 +615,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
   }
 
+  function syncPressureSensitivityControl() {
+    const pressureSensitivityInput = container.querySelector<HTMLInputElement>("#pressure-sensitivity");
+
+    if (pressureSensitivityInput) {
+      pressureSensitivityInput.checked = pressureSensitivityEnabled;
+    }
+  }
+
   function strokeSampleSpacing() {
     return (
       inputQuality >= 5 ? 1.5
@@ -669,6 +689,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
     const strokeWidthInput = requireElement<HTMLInputElement>(container, "#stroke-width");
     const strokeWidthValue = requireElement<HTMLOutputElement>(container, "#stroke-width-value");
+    const pressureSensitivityInput = requireElement<HTMLInputElement>(container, "#pressure-sensitivity");
     const inputQualityInput = requireElement<HTMLInputElement>(container, "#input-quality");
     const inputQualityValue = requireElement<HTMLOutputElement>(container, "#input-quality-value");
 
@@ -703,11 +724,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     strokeWidthInput.value = String(baseStrokeWidth);
     strokeWidthValue.textContent = `${baseStrokeWidth}px`;
+    pressureSensitivityInput.checked = pressureSensitivityEnabled;
     inputQualityInput.value = String(inputQuality);
     inputQualityValue.textContent = inputQualityLabel(inputQuality);
     setActiveToolButton(toolButtons, selectedTool);
     syncStyleControls();
     syncInputQualityControl();
+    syncPressureSensitivityControl();
     updateCursor();
 
     strokeWidthInput.addEventListener("input", () => {
@@ -730,6 +753,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         defaultInputQuality: inputQuality,
       });
       syncInputQualityControl();
+    });
+
+    pressureSensitivityInput.addEventListener("input", () => {
+      pressureSensitivityEnabled = pressureSensitivityInput.checked;
+      writePreferences({
+        pressureSensitivityEnabled,
+      });
+      syncPressureSensitivityControl();
     });
 
   }
@@ -2934,7 +2965,7 @@ ${items}
 
   const onPointerDown = (event: PointerEvent) => {
     const point = screenToWorld(event.clientX, event.clientY);
-    const pressure = getPointerPressure(event);
+    const pressure = getPointerPressure(event, pressureSensitivityEnabled);
 
     if (activeTextEditor && !activeTextEditor.element.contains(event.target as Node | null)) {
       commitTextEditor();
@@ -3110,7 +3141,7 @@ ${items}
     for (const sample of pointerSamples(event)) {
       appendPointToCurrentStroke(
         screenToWorld(sample.clientX, sample.clientY),
-        getPointerPressure(sample),
+        getPointerPressure(sample, pressureSensitivityEnabled),
       );
     }
 
@@ -3295,6 +3326,7 @@ ${items}
   function onPreferencesChanged(event: CustomEvent<{
     defaultStrokeWidth?: number;
     defaultInputQuality?: number;
+    pressureSensitivityEnabled?: boolean;
     defaultShapeKind?: ShapeKind;
     defaultCanvasColor?: string;
   }>) {
@@ -3304,6 +3336,10 @@ ${items}
 
     if (typeof event.detail.defaultInputQuality === "number") {
       inputQuality = clampInputQuality(event.detail.defaultInputQuality);
+    }
+
+    if (typeof event.detail.pressureSensitivityEnabled === "boolean") {
+      pressureSensitivityEnabled = event.detail.pressureSensitivityEnabled;
     }
 
     if (event.detail.defaultShapeKind === "rectangle" || event.detail.defaultShapeKind === "ellipse" || event.detail.defaultShapeKind === "line" || event.detail.defaultShapeKind === "arrow") {
@@ -3322,6 +3358,7 @@ ${items}
 
     syncStyleControls();
     syncInputQualityControl();
+    syncPressureSensitivityControl();
   }
 
   function toCanvasBackgroundPattern(pattern: BackgroundPattern): CanvasBackgroundPattern {
@@ -3553,7 +3590,11 @@ ${items}
   };
 }
 
-function getPointerPressure(event: PointerEvent) {
+function getPointerPressure(event: PointerEvent, pressureSensitivityEnabled: boolean) {
+  if (!pressureSensitivityEnabled) {
+    return 1;
+  }
+
   if (event.pointerType === "mouse") {
     return 1;
   }

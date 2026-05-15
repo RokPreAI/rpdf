@@ -43,6 +43,7 @@
 - [x] 2 UX remove-mode-switch-restore-copy
 - [x] 3 Canvas add-text-tool
 - [x] 1 Canvas fix-text-tool-click-entry
+- [x] 1 Canvas add-pressure-sensitivity-toggle
 - [x] 6 Canvas add-color-picker
 - [x] 6 Canvas add-eraser-tool
 - [x] 6 Canvas add-image-paste
