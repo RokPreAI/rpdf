@@ -1,0 +1,32 @@
+Priority: 1
+Area: Storage
+Status: done
+Depends on: add-save-load-project-files, add-autosave-and-recovery
+
+Goal:
+Make the user-facing project save and load flow actually work from the top path field, so entering a path like `/home/rok/test.json` and pressing `Save` creates or updates the file there, and pressing `Load` reads the file back into the workspace.
+
+Context:
+The current app exposes a direct project path field plus `Save` and `Load` buttons in the header, which strongly implies explicit path-based file IO. In live testing, entering `/home/rok/test.json` and clicking `Save` created no file at that location, and clicking `Load` also produced no visible result. At the same time, `Restore autosave` works, which means local serialization and restoration paths do exist somewhere in the app. The next worker needs to trace why explicit save/load is failing or silent while autosave succeeds.
+
+Expected changes:
+
+- inspect the shell save/load button handlers and the Tauri command path they invoke
+- confirm whether the current implementation is supposed to write directly to the typed path or open a dialog
+- fix path normalization, command wiring, permissions, or error propagation so the direct path flow behaves as the UI suggests
+- make failure states visible in the UI instead of silently doing nothing
+- verify both Canvas and PDF mode project/session save/load behavior, or explicitly scope/document any mode-specific difference
+
+Acceptance criteria:
+
+- Typing an explicit writable path like `/home/rok/test.json` into the header field and pressing `Save` creates or updates a file at that exact location.
+- Pressing `Load` with that same path restores the saved workspace/session content.
+- If the path is invalid, unwritable, or otherwise unusable, the app surfaces a clear visible error instead of silently failing.
+- The worker explains whether any new dialog window is expected or not; the final UX should be unambiguous.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Treat the current UI contract seriously: a visible path input suggests direct path-based save/load unless the UI is redesigned.
+- Compare the explicit project save/load path with the autosave path to find the divergence instead of reimplementing storage from scratch.
+- Keep this task focused on user-facing save/load correctness first; broader storage redesign is out of scope unless a small targeted follow-up task is truly necessary.

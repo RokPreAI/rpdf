@@ -1,0 +1,33 @@
+Priority: 1
+Area: Export
+Status: pending
+Depends on: harden-svg-export-and-save-path
+
+Goal:
+Make SVG export respect the user-provided project path flow instead of silently saving somewhere else or forcing a different destination behavior than the header path suggests.
+
+Context:
+The current app has already moved SVG export into the shared header and added a native save dialog flow in `harden-svg-export-and-save-path`. The user now reports that SVG export does not save to the provided path. That likely means the current export behavior no longer matches the visible UI contract: the app has a top path field, and the user expects export to use that path directly when one is provided. This task should reconcile the export behavior with that expectation instead of leaving it ambiguous.
+
+Expected changes:
+
+- inspect the current Canvas SVG export trigger path in the shell and canvas workspace
+- inspect the backend `save_svg_export` command and determine whether it always opens a dialog instead of using the typed path
+- decide and implement one unambiguous behavior:
+  - either export uses the explicit header path directly when present
+  - or the UI is changed so SVG export no longer implies direct path-based export
+- make the exported path and success/failure state visible in the UI
+- ensure invalid or unwritable export paths show a clear error instead of failing silently
+
+Acceptance criteria:
+
+- If the user provides an explicit writable path intended for SVG export, pressing `Export SVG` saves to that exact location.
+- If the app is not meant to use the header path for SVG export, the UI is updated so that expectation is removed and the actual dialog-based behavior is obvious.
+- Successful export reports the real saved SVG path in the UI.
+- Invalid or unwritable export destinations produce a clear visible error.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Keep this task separate from `fix-project-save-load-path-flow`; project JSON save/load and SVG export are adjacent UX issues but different code paths.
+- The main problem to solve is contract clarity: the user should not need to guess whether export follows the typed path or opens a separate chooser.
