@@ -1,0 +1,31 @@
+Priority: 1
+Area: Canvas
+Status: done
+Depends on: add-text-tool, fix-text-tool-click-entry
+
+Goal:
+Make text entry commit only under explicit user control instead of unpredictably finalizing while the user is still typing.
+
+Context:
+The current text tool can open a text editor correctly, but the user reports that it sometimes stops input and places the text on the canvas too early. That strongly suggests the current accept/blur/idle logic is too eager for a desktop drawing workflow. The requested behavior is explicit control: the text should stay editable until the user deliberately accepts it, with `Esc` proposed as the main confirmation key.
+
+Expected changes:
+
+- inspect the current text-editor lifecycle and identify what currently triggers early commit
+- remove any time-based or overly eager blur-based auto-accept behavior if present
+- make text editing remain active until an explicit user action accepts it
+- support `Esc` as the requested key to finish and place the text
+- make the acceptance/cancel behavior visible and consistent so the user knows how text mode exits
+
+Acceptance criteria:
+
+- After placing a text editor, pauses in typing do not commit the text.
+- Pressing `Esc` finalizes the current text into a canvas text item.
+- Text does not get placed unexpectedly just because focus or timing changes momentarily.
+- Empty text sessions still fail closed without creating junk items.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Keep this task focused on stable text-entry control, not re-editing old text items.
+- If the current behavior also needs a cancel path, define it explicitly instead of leaving blur semantics ambiguous.

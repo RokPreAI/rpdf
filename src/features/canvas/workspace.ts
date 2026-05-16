@@ -161,6 +161,7 @@ type MarqueeSession = {
 type TextEditorSession = {
   element: HTMLTextAreaElement;
   point: Point;
+  completionIntent: "commit" | "cancel" | null;
 };
 
 type PendingTextPlacement = {
@@ -2929,6 +2930,7 @@ ${items}
       return false;
     }
 
+    activeTextEditor.completionIntent = "commit";
     const { element, point } = activeTextEditor;
     const value = element.value.trim();
     teardownTextEditor();
@@ -2954,6 +2956,7 @@ ${items}
       return;
     }
 
+    activeTextEditor.completionIntent = "cancel";
     teardownTextEditor();
     redraw();
   }
@@ -2979,7 +2982,7 @@ ${items}
     const onEditorKeyDown = (keyEvent: KeyboardEvent) => {
       if (keyEvent.key === "Escape") {
         keyEvent.preventDefault();
-        cancelTextEditor();
+        commitTextEditor();
         return;
       }
 
@@ -2991,13 +2994,26 @@ ${items}
 
     editor.addEventListener("keydown", onEditorKeyDown);
     editor.addEventListener("blur", () => {
-      commitTextEditor();
-    }, { once: true });
+      if (!activeTextEditor || activeTextEditor.element !== editor) {
+        return;
+      }
+
+      if (activeTextEditor.completionIntent === "commit" || activeTextEditor.completionIntent === "cancel") {
+        return;
+      }
+
+      window.setTimeout(() => {
+        if (activeTextEditor?.element === editor) {
+          editor.focus();
+        }
+      }, 0);
+    });
 
     container.querySelector(".canvas-workspace")?.append(editor);
     activeTextEditor = {
       element: editor,
       point,
+      completionIntent: null,
     };
     editor.focus();
     redraw();
