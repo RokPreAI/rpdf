@@ -277,6 +277,13 @@ pub struct SpeakTextRequestDto {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LocalSpeechBackendDto {
+    pub backend_key: String,
+    pub backend_name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TextSpanDto {
     pub text: String,
     pub x: f32,

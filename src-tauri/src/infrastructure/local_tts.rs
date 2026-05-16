@@ -1,39 +1,75 @@
-use crate::contracts::dto::SpeakTextRequestDto;
+use crate::contracts::dto::{LocalSpeechBackendDto, SpeakTextRequestDto};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub fn speak_text(request: &SpeakTextRequestDto) -> Result<(), String> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LocalTtsBackend {
+    SpeechDispatcher,
+    EspeakNg,
+    Espeak,
+}
+
+impl LocalTtsBackend {
+    fn key(self) -> &'static str {
+        match self {
+            Self::SpeechDispatcher => "speech_dispatcher",
+            Self::EspeakNg => "espeak_ng",
+            Self::Espeak => "espeak",
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::SpeechDispatcher => "Speech Dispatcher",
+            Self::EspeakNg => "eSpeak NG",
+            Self::Espeak => "eSpeak",
+        }
+    }
+}
+
+pub fn speak_text(request: &SpeakTextRequestDto) -> Result<LocalSpeechBackendDto, String> {
     let normalized_text = request.text.trim();
 
     if normalized_text.is_empty() {
         return Err("Text is required for local speech.".to_string());
     }
 
-    local_tts_status()?;
+    let backend = select_local_tts_backend()?;
 
-    let rate = speech_rate_to_spd_rate(request.rate);
-    let output = Command::new("spd-say")
-        .args([
-            "--wait",
-            "--application-name",
-            "rpdf",
-            "--rate",
-            &rate.to_string(),
-            normalized_text,
-        ])
-        .output()
-        .map_err(|error| format!("Could not run spd-say: {error}"))?;
+    let output = match backend {
+        LocalTtsBackend::SpeechDispatcher => speak_with_speech_dispatcher(normalized_text, request.rate)?,
+        LocalTtsBackend::EspeakNg => speak_with_espeak_command("espeak-ng", normalized_text, request.rate)?,
+        LocalTtsBackend::Espeak => speak_with_espeak_command("espeak", normalized_text, request.rate)?,
+    };
 
     if output.status.success() {
-        return Ok(());
+        return Ok(LocalSpeechBackendDto {
+            backend_key: backend.key().to_string(),
+            backend_name: backend.name().to_string(),
+        });
     }
 
-    Err(format_speech_dispatcher_error(
-        "Local speech playback failed",
-        &output.stderr,
-    ))
+    match backend {
+        LocalTtsBackend::SpeechDispatcher => Err(format_speech_dispatcher_error(
+            "Local speech playback failed",
+            &output.stderr,
+        )),
+        LocalTtsBackend::EspeakNg | LocalTtsBackend::Espeak => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let trimmed = stderr.trim();
+            if trimmed.is_empty() {
+                Err(format!("Local speech playback failed with {}.", backend.name()))
+            } else {
+                Err(format!(
+                    "Local speech playback failed with {}: {}",
+                    backend.name(),
+                    trimmed.lines().next().unwrap_or(trimmed)
+                ))
+            }
+        }
+    }
 }
 
 pub fn stop_speaking() -> Result<(), String> {
@@ -59,6 +95,57 @@ pub fn stop_speaking() -> Result<(), String> {
 fn speech_rate_to_spd_rate(rate: f32) -> i32 {
     let normalized_rate = rate.clamp(0.5, 2.0);
     ((normalized_rate - 1.0) * 100.0).round() as i32
+}
+
+fn speech_rate_to_espeak_wpm(rate: f32) -> i32 {
+    let normalized_rate = rate.clamp(0.5, 2.0);
+    (175.0 * normalized_rate).round() as i32
+}
+
+fn speak_with_speech_dispatcher(text: &str, rate: f32) -> Result<std::process::Output, String> {
+    let rate = speech_rate_to_spd_rate(rate);
+    Command::new("spd-say")
+        .args([
+            "--wait",
+            "--application-name",
+            "rpdf",
+            "--rate",
+            &rate.to_string(),
+            text,
+        ])
+        .output()
+        .map_err(|error| format!("Could not run spd-say: {error}"))
+}
+
+fn speak_with_espeak_command(
+    command: &str,
+    text: &str,
+    rate: f32,
+) -> Result<std::process::Output, String> {
+    let rate = speech_rate_to_espeak_wpm(rate);
+    Command::new(command)
+        .args(["-s", &rate.to_string(), text])
+        .output()
+        .map_err(|error| format!("Could not run {command}: {error}"))
+}
+
+fn select_local_tts_backend() -> Result<LocalTtsBackend, String> {
+    match local_tts_status() {
+        Ok(()) => return Ok(LocalTtsBackend::SpeechDispatcher),
+        Err(speech_dispatcher_error) => {
+            if command_exists("espeak-ng").is_ok() {
+                return Ok(LocalTtsBackend::EspeakNg);
+            }
+
+            if command_exists("espeak").is_ok() {
+                return Ok(LocalTtsBackend::Espeak);
+            }
+
+            return Err(format!(
+                "{speech_dispatcher_error} Direct fallback backends are also unavailable because neither `espeak-ng` nor `espeak` is installed."
+            ));
+        }
+    }
 }
 
 fn local_tts_status() -> Result<(), String> {
@@ -281,7 +368,11 @@ fn diagnose_from_stderr_only(lines: &[&str]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{diagnose_from_text_sources, format_speech_dispatcher_error};
+    use super::{
+        diagnose_from_text_sources,
+        format_speech_dispatcher_error,
+        speech_rate_to_espeak_wpm,
+    };
 
     #[test]
     fn formats_dispatcher_connection_errors_compactly() {
@@ -324,5 +415,12 @@ mod tests {
             diagnosis,
             Some("Speech Dispatcher tried the Festival backend, but no Festival server is running. Start Festival or configure a different Speech Dispatcher output module.".to_string())
         );
+    }
+
+    #[test]
+    fn maps_speech_rate_to_espeak_words_per_minute() {
+        assert_eq!(speech_rate_to_espeak_wpm(1.0), 175);
+        assert_eq!(speech_rate_to_espeak_wpm(0.5), 88);
+        assert_eq!(speech_rate_to_espeak_wpm(2.0), 350);
     }
 }

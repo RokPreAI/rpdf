@@ -4,6 +4,7 @@ use crate::contracts::dto::{
     AppModeDto,
     ExtractPdfTextRequestDto,
     LoadCanvasProjectRequestDto,
+    LocalSpeechBackendDto,
     LoadPdfStudySessionRequestDto,
     OpenPdfDocumentRequestDto,
     OpenPdfDocumentResponseDto,
@@ -195,7 +196,7 @@ impl AppServices {
     pub fn speak_text_locally(
         &self,
         request: &SpeakTextRequestDto,
-    ) -> Result<(), String> {
+    ) -> Result<LocalSpeechBackendDto, String> {
         local_tts::speak_text(request)
     }
 

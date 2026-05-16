@@ -1,0 +1,28 @@
+Priority: 2
+Area: Reading
+Status: done
+Depends on: diagnose-speech-dispatcher-backend-failure
+
+Goal:
+Add a second local TTS backend path that does not depend entirely on the current `spd-say` / Speech Dispatcher stack, so local reading can still work on machines where Speech Dispatcher is installed but unusable.
+
+Context:
+The speech-dispatcher logs show that this machine currently has no working real Speech Dispatcher output module. Even with better diagnostics, reading will still fail unless the environment is fixed or the app has another local backend option.
+
+Expected changes:
+
+- choose one secondary local backend strategy that fits the app’s offline-first design
+- keep the current `spd-say` path as one supported backend, not the only one
+- make backend selection explicit and diagnosable
+- ensure the read-page flow can fall back to the second local backend when Speech Dispatcher is present but unusable
+
+Acceptance criteria:
+
+- The app supports at least one local non-Speech-Dispatcher reading backend path, or the task explicitly records why that is not viable on the target platform.
+- Backend selection/fallback behavior is visible enough for debugging.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Do not assume `espeak-ng` is already installed on the target machine; the logs suggest it is not currently usable here.
+- Browser speech fallback and cloud TTS remain separate concerns from this task.

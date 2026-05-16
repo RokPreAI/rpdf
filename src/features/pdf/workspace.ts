@@ -584,6 +584,11 @@ export function mountPdfWorkspace(
     return "speechSynthesis" in window;
   }
 
+  type LocalSpeechBackend = {
+    backendKey: string;
+    backendName: string;
+  };
+
   function describeSpeechError(error: unknown) {
     if (typeof error === "string") {
       return error;
@@ -686,7 +691,7 @@ export function mountPdfWorkspace(
     renderReadingPanel();
 
     try {
-      await invoke("speak_text_locally", {
+      const localSpeechBackend = await invoke<LocalSpeechBackend>("speak_text_locally", {
         request: {
           text,
           rate: speechRate,
@@ -699,7 +704,7 @@ export function mountPdfWorkspace(
 
       state.isSpeaking = false;
       state.activeSpeechBackend = null;
-      state.readingStatus = "Reading finished.";
+      state.readingStatus = `Reading finished with local backend ${localSpeechBackend.backendName}.`;
       renderReadingPanel();
       return;
     } catch (error) {

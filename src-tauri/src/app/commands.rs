@@ -5,6 +5,7 @@ use crate::contracts::dto::{
     AppBootstrapDto,
     ExtractPdfTextRequestDto,
     LoadCanvasProjectRequestDto,
+    LocalSpeechBackendDto,
     LoadPdfStudySessionRequestDto,
     OpenPdfDocumentRequestDto,
     OpenPdfDocumentResponseDto,
@@ -106,7 +107,7 @@ pub fn extract_pdf_page_ocr(
 pub fn speak_text_locally(
     request: SpeakTextRequestDto,
     services: State<'_, AppServices>,
-) -> Result<(), String> {
+) -> Result<LocalSpeechBackendDto, String> {
     services.speak_text_locally(&request)
 }
 

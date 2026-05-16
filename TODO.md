@@ -2,8 +2,6 @@
 
 # TODOs
 
-- [ ] 2 Reading add-secondary-local-tts-backend
-
 # Done TODOs
 
 - [x] 0 Architecture architecture-foundation-and-pdfium-gate
@@ -46,6 +44,7 @@
 - [x] 2 Export harden-svg-export-and-save-path
 - [x] 2 Export move-backend-status-overlay
 - [x] 2 PDF add-recent-pdf-quick-open-list
+- [x] 2 Reading add-secondary-local-tts-backend
 - [x] 2 Reading add-tts-and-reliability-pipeline
 - [x] 2 Storage add-autosave-and-recovery
 - [x] 2 Storage optimize-project-save-file-size
