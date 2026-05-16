@@ -1,0 +1,29 @@
+Priority: 2
+Area: Canvas
+Status: done
+Depends on: add-multi-select, add-stroke-selection-editing, add-selection-style-editing
+
+Goal:
+Allow the user to delete the currently selected canvas element or selected set of elements by pressing the `Delete` key as an alternative to the eraser tool.
+
+Context:
+The user wants a keyboard-based removal path for selected items. Selection already exists for strokes, shapes, images, PDF pages, and text, so the next step is to bind deletion directly to the active selection instead of forcing every removal through the eraser workflow.
+
+Expected changes:
+
+- inspect the canvas keyboard shortcut handling path
+- add `Delete` key handling when a selection exists
+- make deletion work for single and multi-selection
+- ensure the selection clears or updates coherently after removal
+
+Acceptance criteria:
+
+- Pressing `Delete` with one selected item removes that item.
+- Pressing `Delete` with multiple selected items removes the full selected set.
+- Pressing `Delete` with no selection does not remove unrelated content.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Keep this focused on keyboard deletion, not undo/history.
+- Reuse existing item-removal paths where possible so deletion semantics stay consistent with eraser behavior.

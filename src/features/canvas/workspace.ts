@@ -2339,6 +2339,62 @@ ${items}
     }
   }
 
+  function removeSelectedItems() {
+    if (selectedItems.length === 0) {
+      return false;
+    }
+
+    const selectedStrokeIds = new Set<string>();
+    const selectedShapeIds = new Set<string>();
+    const selectedTextIds = new Set<string>();
+    const selectedImageIds = new Set<string>();
+    const selectedPdfPageIds = new Set<string>();
+
+    for (const target of selectedItems) {
+      const id = selectedTargetId(target);
+
+      if (!id) {
+        continue;
+      }
+
+      if (target.kind === "stroke") {
+        selectedStrokeIds.add(id);
+      } else if (target.kind === "shape") {
+        selectedShapeIds.add(id);
+      } else if (target.kind === "text") {
+        selectedTextIds.add(id);
+      } else if (target.kind === "image") {
+        selectedImageIds.add(id);
+      } else {
+        selectedPdfPageIds.add(id);
+      }
+    }
+
+    if (
+      selectedStrokeIds.size === 0
+      && selectedShapeIds.size === 0
+      && selectedTextIds.size === 0
+      && selectedImageIds.size === 0
+      && selectedPdfPageIds.size === 0
+    ) {
+      return false;
+    }
+
+    const nextStrokes = strokes.filter((stroke) => !selectedStrokeIds.has(stroke.id));
+    const nextShapes = shapes.filter((shape) => !selectedShapeIds.has(shape.id));
+    const nextTexts = texts.filter((textItem) => !selectedTextIds.has(textItem.id));
+    const nextImages = images.filter((image) => !selectedImageIds.has(image.id));
+    const nextPdfPages = pdfPages.filter((pdfPage) => !selectedPdfPageIds.has(pdfPage.id));
+
+    strokes.splice(0, strokes.length, ...nextStrokes);
+    shapes.splice(0, shapes.length, ...nextShapes);
+    texts.splice(0, texts.length, ...nextTexts);
+    images.splice(0, images.length, ...nextImages);
+    pdfPages.splice(0, pdfPages.length, ...nextPdfPages);
+    setSelection([]);
+    return true;
+  }
+
   function remapPointBetweenBounds(point: Point, originalBounds: Bounds, nextBounds: Bounds): Point {
     const originalWidth = originalBounds.maxX - originalBounds.minX;
     const originalHeight = originalBounds.maxY - originalBounds.minY;
@@ -3508,6 +3564,15 @@ ${items}
       }
 
       redraw();
+    }
+
+    if (event.key === "Delete") {
+      if (removeSelectedItems()) {
+        event.preventDefault();
+        redraw();
+      }
+
+      return;
     }
 
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
