@@ -1,6 +1,6 @@
 Priority: 1
 Area: Export
-Status: pending
+Status: done
 Depends on: harden-svg-export-and-save-path
 
 Goal:

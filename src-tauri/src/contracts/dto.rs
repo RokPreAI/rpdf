@@ -231,6 +231,7 @@ pub struct SavePdfStudySessionRequestDto {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveSvgExportRequestDto {
+    pub file_path: Option<String>,
     pub suggested_file_name: String,
     pub svg_markup: String,
 }

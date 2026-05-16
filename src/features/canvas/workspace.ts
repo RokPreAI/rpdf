@@ -1945,7 +1945,7 @@ ${items}
 </svg>`;
   }
 
-  async function exportSvg() {
+  async function exportSvg(event?: Event) {
     const exportState = currentSvgExportState();
 
     if (!exportState.eligible) {
@@ -1955,10 +1955,13 @@ ${items}
 
     const svgMarkup = createSvgMarkup(exportState.vectors);
     const suggestedFileName = selectedItems.length > 0 ? "canvas-selection.svg" : "canvas-document.svg";
+    const exportRequest = event as CustomEvent<{ filePath?: string }> | undefined;
+    const filePath = exportRequest?.detail?.filePath?.trim() ?? "";
 
     try {
       const savedPath = await invoke<string | null>("save_svg_export", {
         request: {
+          filePath: filePath.length > 0 ? filePath : null,
           suggestedFileName,
           svgMarkup,
         },
@@ -1966,13 +1969,34 @@ ${items}
 
       if (savedPath) {
         updateSvgExportStateMessage(`SVG exported to ${savedPath}`);
+        window.dispatchEvent(new CustomEvent("rpdf:canvas-svg-export-result", {
+          detail: {
+            level: "success",
+            message: `SVG exported to ${savedPath}`,
+            savedPath,
+          },
+        }));
         return;
       }
 
       updateSvgExportStateMessage("SVG export was cancelled.");
+      window.dispatchEvent(new CustomEvent("rpdf:canvas-svg-export-result", {
+        detail: {
+          level: "info",
+          message: "SVG export was cancelled.",
+          savedPath: null,
+        },
+      }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       updateSvgExportStateMessage(`SVG export failed: ${message}`);
+      window.dispatchEvent(new CustomEvent("rpdf:canvas-svg-export-result", {
+        detail: {
+          level: "error",
+          message: `SVG export failed: ${message}`,
+          savedPath: null,
+        },
+      }));
     }
   }
 

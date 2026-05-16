@@ -137,6 +137,21 @@ impl AppServices {
             return Err("SVG export markup was empty.".to_string());
         }
 
+        if let Some(explicit_file_path) = request.file_path.as_deref() {
+            let normalized_path = explicit_file_path.trim();
+
+            if !normalized_path.is_empty() {
+                let export_path = std::path::PathBuf::from(normalized_path);
+
+                if !path_has_svg_extension(&export_path) {
+                    return Err("SVG export requires a `.svg` destination path, or leave the field empty to choose a save location.".to_string());
+                }
+
+                write_text_document(&export_path, svg_markup.as_bytes(), "SVG export")?;
+                return Ok(Some(export_path.display().to_string()));
+            }
+        }
+
         let suggested_file_name = default_svg_file_name(&request.suggested_file_name);
         let selected_path = rfd::FileDialog::new()
             .add_filter("SVG image", &["svg"])
@@ -151,15 +166,7 @@ impl AppServices {
             export_path.set_extension("svg");
         }
 
-        if let Some(parent) = export_path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|error| format!("Could not create export directory: {error}"))?;
-            }
-        }
-
-        std::fs::write(&export_path, svg_markup.as_bytes())
-            .map_err(|error| format!("Could not write SVG export: {error}"))?;
+        write_text_document(&export_path, svg_markup.as_bytes(), "SVG export")?;
 
         Ok(Some(export_path.display().to_string()))
     }
@@ -236,6 +243,13 @@ fn default_svg_file_name(suggested_file_name: &str) -> String {
     }
 
     format!("{trimmed}.svg")
+}
+
+fn path_has_svg_extension(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("svg"))
+        .unwrap_or(false)
 }
 
 fn load_or_initialize_app_config() -> (AppConfigDto, String, Vec<String>) {
@@ -358,8 +372,25 @@ where
     let serialized = serde_json::to_string_pretty(document)
         .map_err(|error| format!("Could not serialize document: {error}"))?;
 
-    std::fs::write(path, serialized)
-        .map_err(|error| format!("Could not write document file: {error}"))?;
+    write_text_document(path, serialized.as_bytes(), "document file")?;
+
+    Ok(())
+}
+
+fn write_text_document(
+    path: &std::path::Path,
+    contents: &[u8],
+    label: &str,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("Could not create parent directories for {label}: {error}"))?;
+        }
+    }
+
+    std::fs::write(path, contents)
+        .map_err(|error| format!("Could not write {label}: {error}"))?;
 
     Ok(())
 }

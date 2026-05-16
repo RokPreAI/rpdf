@@ -383,7 +383,22 @@ export function mountAppShell(root: HTMLElement) {
   });
 
   canvasExportSvgButton.addEventListener("click", () => {
-    window.dispatchEvent(new CustomEvent("rpdf:request-canvas-svg-export"));
+    const explicitPath = projectPathInput.value.trim();
+
+    if (state.snapshot.mode !== "canvas") {
+      return;
+    }
+
+    if (explicitPath && !explicitPath.toLowerCase().endsWith(".svg")) {
+      backendStatus.textContent = "SVG export uses the header path only for `.svg` destinations. Enter a `.svg` path or clear the field to choose a save location.";
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent("rpdf:request-canvas-svg-export", {
+      detail: {
+        filePath: explicitPath,
+      },
+    }));
   });
 
   autosaveRestoreButton.addEventListener("click", () => {
@@ -413,6 +428,25 @@ export function mountAppShell(root: HTMLElement) {
 
     canvasExportSvgButton.disabled = !customEvent.detail.eligible;
     canvasExportSvgButton.title = customEvent.detail.message;
+  }) as EventListener);
+
+  window.addEventListener("rpdf:canvas-svg-export-result", ((event) => {
+    const customEvent = event as CustomEvent<{
+      level: "success" | "info" | "error";
+      message: string;
+      savedPath: string | null;
+    }>;
+
+    if (state.snapshot.mode !== "canvas") {
+      return;
+    }
+
+    backendStatus.textContent = customEvent.detail.message;
+
+    if (customEvent.detail.savedPath) {
+      projectPathInput.value = customEvent.detail.savedPath;
+      modeProjectPaths.canvas = customEvent.detail.savedPath;
+    }
   }) as EventListener);
 
   state.subscribe(({ mode }) => {
