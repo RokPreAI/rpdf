@@ -2395,6 +2395,18 @@ ${items}
     return true;
   }
 
+  function selectAllItems() {
+    const allTargets: SelectionTarget[] = [
+      ...strokes.map((_, index) => ({ kind: "stroke" as const, index })),
+      ...shapes.map((_, index) => ({ kind: "shape" as const, index })),
+      ...texts.map((_, index) => ({ kind: "text" as const, index })),
+      ...images.map((_, index) => ({ kind: "image" as const, index })),
+      ...pdfPages.map((_, index) => ({ kind: "pdf_page" as const, index })),
+    ];
+
+    setSelection(allTargets);
+  }
+
   function remapPointBetweenBounds(point: Point, originalBounds: Bounds, nextBounds: Bounds): Point {
     const originalWidth = originalBounds.maxX - originalBounds.minX;
     const originalHeight = originalBounds.maxY - originalBounds.minY;
@@ -3564,6 +3576,13 @@ ${items}
       }
 
       redraw();
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      selectAllItems();
+      redraw();
+      return;
     }
 
     if (event.key === "Delete") {

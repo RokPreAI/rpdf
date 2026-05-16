@@ -1,0 +1,29 @@
+Priority: 2
+Area: Canvas
+Status: done
+Depends on: add-multi-select, add-marquee-selection
+
+Goal:
+Support `Ctrl+A` / `Cmd+A` in Canvas Mode to select every selectable canvas element at once.
+
+Context:
+The user expects standard select-all behavior. Multi-selection already exists, so this task should extend the keyboard path to build a selection containing all selectable canvas items instead of only supporting manual click or marquee accumulation.
+
+Expected changes:
+
+- inspect the canvas keyboard shortcut handling path
+- add `Ctrl+A` / `Cmd+A` handling in Canvas Mode
+- build a complete selection containing every selectable stroke, shape, text item, image, and imported PDF page
+- prevent the browser default “select page text” behavior inside the Tauri webview
+
+Acceptance criteria:
+
+- Pressing `Ctrl+A` / `Cmd+A` in Canvas Mode selects all selectable canvas items.
+- The resulting selection works with the existing move, resize, style-edit, and delete-selection flows.
+- The browser/webview default text-selection behavior does not interfere.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Keep this Canvas-only unless there is already a parallel selection model in PDF Mode.
+- This task should complement, not replace, marquee and manual additive selection.
