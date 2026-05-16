@@ -1,3 +1,9 @@
+.codex/
+node_modules/
+dist/
+
+src-tauri/canvas-*.svg
+
 todos/
 TODO.md
 DECISION.md
