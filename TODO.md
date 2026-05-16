@@ -2,6 +2,8 @@
 
 # TODOs
 
+- [ ] 2 Reading add-secondary-local-tts-backend
+
 # Done TODOs
 
 - [x] 0 Architecture architecture-foundation-and-pdfium-gate
@@ -22,6 +24,7 @@
 - [x] 1 PDF fix-pdf-mode-annotations
 - [x] 1 Reading fix-read-page-action
 - [x] 1 Reading fix-read-page-runtime-tts-error
+- [x] 1 Reading diagnose-speech-dispatcher-backend-failure
 - [x] 1 Storage add-save-load-project-files
 - [x] 1 Storage fix-project-save-load-path-flow
 - [x] 2 Canvas add-arrow-tool

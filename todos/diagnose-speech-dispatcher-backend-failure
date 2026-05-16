@@ -1,0 +1,42 @@
+Priority: 1
+Area: Reading
+Status: done
+Depends on: fix-read-page-runtime-tts-error
+
+Goal:
+Turn the current Speech Dispatcher failure from a vague local-TTS problem into an explicit backend diagnosis with actionable remediation, based on the actual module failures on this machine.
+
+Context:
+The current app already improved `spd-say` failure handling, but the new logs from `/run/user/1000/speech-dispatcher/log/` show a more specific root cause:
+
+- `spd-say` exists and Speech Dispatcher starts.
+- `festival` fails because no Festival server is running.
+- `openjtalk` fails because its voice file is missing.
+- `espeak-ng`, `espeak-ng-mbrola`, and `espeak-ng-fallback` fail because `libespeak-ng.so.1` is missing.
+- only `dummy` survives, and it then reports `Opening sound device failed. Reason: server audio is not supported.`
+
+So the real issue is not “Speech Dispatcher socket is missing” anymore. It is “Speech Dispatcher has no usable real output backend on this machine.”
+
+Expected changes:
+
+- inspect the local TTS Rust adapter and the read-page UI messaging
+- improve runtime detection so the app can distinguish:
+  - dispatcher unavailable
+  - dispatcher available but no usable output module
+  - dispatcher available but audio device/backend broken
+- surface actionable remediation text in-app, ideally naming the real missing backend dependency when detectable
+- record the known failure signatures from the observed logs, especially missing `libespeak-ng.so.1` and dummy-only audio failure
+- avoid implying that TTS should work just because `spd-say` itself exists
+
+Acceptance criteria:
+
+- When local TTS fails in this environment, the user sees a message that reflects the real backend problem rather than a generic local-speech failure.
+- The diagnosis can distinguish the current “dummy-only / no real module” state from a simple missing socket case.
+- The task documents the exact observed failure signatures from `/run/user/1000/speech-dispatcher/log/`.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- The most important observed signature is `libespeak-ng.so.1: cannot open shared object file`.
+- The many missing locale dictionary files in the log are likely secondary noise, not the primary blocker.
+- Keep this task focused on diagnosis and user-facing remediation guidance, not on adding a new speech engine yet.
