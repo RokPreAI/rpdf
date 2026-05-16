@@ -1,16 +1,6 @@
 # Current TODOs
 
-- [ ] 1 Reading fix-read-page-runtime-tts-error
-
 # TODOs
-
-- [ ] 1 Export fix-svg-export-direct-path-flow
-- [ ] 3 Reading evaluate-elevenlabs-tts-fallback-and-timing
-- [ ] 2 Canvas extend-eraser-to-images
-- [ ] 2 Canvas add-delete-selection-shortcut
-- [ ] 2 Canvas add-select-all-shortcut
-- [ ] 2 Storage optimize-project-save-file-size
-- [ ] 3 Canvas add-fit-view-space-shortcut
 
 # Done TODOs
 
@@ -23,37 +13,49 @@
 - [x] 1 Canvas add-tablet-pressure-and-stroke-width
 - [x] 1 Canvas fix-select-tool
 - [x] 1 Canvas fix-text-tool-click-entry
+- [x] 1 Canvas fix-text-editor-autosave-commit
+- [x] 1 Canvas fix-text-tool-commit-control
 - [x] 1 Canvas improve-selection-hit-geometry
 - [x] 1 Canvas require-full-containment-selection
 - [x] 1 PDF build-pdf-mode-shell
 - [x] 1 PDF contain-pdf-within-viewport
 - [x] 1 PDF fix-pdf-mode-annotations
 - [x] 1 Reading fix-read-page-action
+- [x] 1 Reading fix-read-page-runtime-tts-error
 - [x] 1 Storage add-save-load-project-files
 - [x] 1 Storage fix-project-save-load-path-flow
 - [x] 2 Canvas add-arrow-tool
+- [x] 2 Canvas add-delete-selection-shortcut
 - [x] 2 Canvas add-element-resize
 - [x] 2 Canvas add-input-polling-rate-setting
 - [x] 2 Canvas add-marquee-selection
 - [x] 2 Canvas add-multi-select
 - [x] 2 Canvas add-multi-selection-resize
+- [x] 2 Canvas add-select-all-shortcut
 - [x] 2 Canvas add-selection-and-move-tools
 - [x] 2 Canvas add-selection-style-editing
 - [x] 2 Canvas add-stroke-resize
 - [x] 2 Canvas add-stroke-selection-editing
+- [x] 2 Canvas add-text-item-reedit
+- [x] 2 Canvas extend-eraser-to-images
 - [x] 2 Canvas fix-zoom-scaled-stroke-rendering
 - [x] 2 Export add-svg-export-eligibility
 - [x] 2 Export harden-svg-export-and-save-path
+- [x] 2 Export move-backend-status-overlay
 - [x] 2 PDF add-recent-pdf-quick-open-list
 - [x] 2 Reading add-tts-and-reliability-pipeline
 - [x] 2 Storage add-autosave-and-recovery
+- [x] 2 Storage optimize-project-save-file-size
 - [x] 2 UX add-editable-config-file
 - [x] 2 UX fix-recolor-controls-layout-and-state
 - [x] 2 UX harden-responsive-layout-under-window-resize
 - [x] 2 UX remove-mode-switch-restore-copy
 - [x] 3 Canvas add-draw-shapes
+- [x] 3 Canvas add-fit-view-space-shortcut
 - [x] 3 Canvas add-text-tool
 - [x] 3 PDF add-pdf-page-import-and-recolor
+- [x] 3 Reading evaluate-elevenlabs-tts-fallback-and-timing
+- [x] 1 Export fix-svg-export-direct-path-flow
 - [x] 3 UX add-config-and-toolbar-icons
 - [x] 3 UX add-excalidraw-style-tool-and-color-shortcuts
 - [x] 6 Canvas add-color-picker

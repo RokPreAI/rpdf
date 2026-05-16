@@ -3898,8 +3898,6 @@ ${items}
 
   return {
     exportDocument(): WorkspaceDocumentSnapshot {
-      commitTextEditor();
-
       const document: CanvasDocument = {
         version: {
           major: 1,

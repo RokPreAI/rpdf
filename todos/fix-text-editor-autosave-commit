@@ -1,0 +1,41 @@
+Priority: 1
+Area: Canvas
+Status: done
+Depends on: fix-text-tool-commit-control, add-autosave-and-recovery
+
+Goal:
+Stop in-progress text editing from being force-committed by autosave or other snapshot/export flows while the user is still typing.
+
+Context:
+The text tool still appears to "confirm" text after a few seconds even though the earlier blur-based commit behavior was changed. The remaining culprit is the snapshot path:
+
+- `src/app/shell.ts` runs `writeAutosaveSnapshot()` on a `window.setInterval(..., 5000)`.
+- `writeAutosaveSnapshot()` calls `activeWorkspace.exportDocument()`.
+- Canvas `exportDocument()` in `src/features/canvas/workspace.ts` currently starts with `commitTextEditor()`.
+
+That means every autosave interval can finalize the active text editor even when the user has not explicitly accepted it. The same risk also exists for any other path that snapshots the workspace while a text editor is open, such as mode persistence, save, and export-driven state capture.
+
+Expected changes:
+
+- inspect every call path that reaches canvas `exportDocument()` while text editing is active
+- remove the unconditional `commitTextEditor()` side effect from snapshot/export behavior
+- define a safe serialization rule for in-progress text editing
+- either:
+  - exclude the transient editor from saved snapshots, or
+  - serialize it as transient editing state without converting it into a committed text item
+- ensure explicit user actions like `Esc` and `Ctrl+Enter` still commit text intentionally
+- ensure autosave, mode-switch persistence, manual save, and SVG export do not silently finalize text entry
+
+Acceptance criteria:
+
+- Opening the text editor and waiting longer than the autosave interval does not place the text on the canvas.
+- Autosave continues to run without corrupting text-entry state.
+- Saving, mode switching, and other snapshot/export flows do not implicitly commit the active text editor.
+- Explicit text acceptance still works through the defined commit actions.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- The likely fix is architectural, not cosmetic: snapshot/export code should be side-effect free.
+- If a temporary open editor cannot be serialized safely, fail closed by omitting it from snapshots rather than converting it into committed canvas content.
+- After the fix, it may be worth adding a targeted regression task for text-editor persistence semantics across mode switches or reloads, but that is not part of this task unless it becomes necessary during implementation.
