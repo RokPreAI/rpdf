@@ -1,0 +1,37 @@
+Priority: 3
+Area: Reading
+Status: done
+
+Decision:
+
+- Not suitable as the default reading backend for this app.
+- Viable only as an explicit optional cloud backend for users who opt in to networked TTS and accept the privacy, cost, and reliability tradeoffs.
+- If implemented, use the ElevenLabs `with-timestamps` text-to-speech endpoint first and derive word spans locally from the returned character timings.
+- Use Forced Alignment only as a fallback or post-processing tool when generated audio and transcript need re-alignment after separate handling.
+Depends on: fix-read-page-runtime-tts-error
+
+Goal:
+Evaluate whether ElevenLabs-based voice generation is a viable optional reading backend without breaking follow-along highlighting expectations or the app's trust model.
+
+Context:
+The user proposed passing extracted PDF text to ElevenLabs for higher-quality voice output. That may improve voice quality, but it introduces network dependency, privacy tradeoffs, latency, API cost, and possible loss of exact word-timing data needed for accurate highlighting. This needs to be evaluated deliberately instead of being mixed into the immediate local TTS bug fix.
+
+Expected changes:
+
+- inspect the current reading/highlighting pipeline and identify what timing data it needs from a speech backend
+- determine whether ElevenLabs can return timing metadata precise enough for the current or planned highlight behavior
+- define whether ElevenLabs would be a fallback-only path, an optional configured backend, or a rejected approach
+- document privacy, offline, latency, and API-key handling implications for this app
+- if the approach is viable, define the minimal integration path and failure behavior without implementing the full provider yet
+
+Acceptance criteria:
+
+- There is a clear yes/no recommendation on whether ElevenLabs is suitable for this app's reading mode.
+- The decision explicitly addresses word-level or segment-level timing support for follow-along highlighting.
+- The tradeoff between offline local TTS and cloud TTS is documented in app terms: privacy, reliability, latency, and cost.
+- If viable, the task output defines the next implementation step instead of leaving the integration vague.
+
+Notes:
+
+- This is an evaluation/design task, not the implementation of the provider itself.
+- If exact timing is unavailable or weak, the app must not pretend highlighting is precise.
