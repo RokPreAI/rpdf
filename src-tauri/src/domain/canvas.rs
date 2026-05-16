@@ -33,11 +33,11 @@ pub enum BackgroundPattern {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CanvasStroke {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub color: String,
     pub width: f32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub order: Option<u32>,
     pub points: Vec<CanvasPoint>,
 }
@@ -86,7 +86,19 @@ pub struct CanvasText {
 pub struct CanvasPoint {
     pub x: f32,
     pub y: f32,
+    #[serde(
+        default = "default_pressure_value",
+        skip_serializing_if = "is_default_pressure_value"
+    )]
     pub pressure: f32,
+}
+
+fn default_pressure_value() -> f32 {
+    1.0
+}
+
+fn is_default_pressure_value(value: &f32) -> bool {
+    (*value - 1.0).abs() < f32::EPSILON
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -190,5 +202,44 @@ mod tests {
         assert_eq!(parsed.texts[0].font_size, 16.0);
         assert_eq!(parsed.images[0].asset_path, "/tmp/example.png");
         assert_eq!(parsed.pdf_pages[0].source_pdf_path, "/tmp/example.pdf");
+    }
+
+    #[test]
+    fn canvas_document_serialization_omits_default_pressure_and_empty_stroke_metadata() {
+        let document = CanvasDocument {
+            version: DocumentVersion { major: 1, minor: 0 },
+            id: "canvas-1".to_string(),
+            background_pattern: BackgroundPattern::Dots,
+            strokes: vec![CanvasStroke {
+                id: None,
+                color: "#ffffff".to_string(),
+                width: 3.0,
+                order: None,
+                points: vec![
+                    CanvasPoint {
+                        x: 10.0,
+                        y: 20.0,
+                        pressure: 1.0,
+                    },
+                    CanvasPoint {
+                        x: 12.0,
+                        y: 24.0,
+                        pressure: 0.5,
+                    },
+                ],
+            }],
+            shapes: vec![],
+            texts: vec![],
+            images: vec![],
+            pdf_pages: vec![],
+        };
+
+        let serialized =
+            serde_json::to_string(&document).expect("canvas document should serialize compactly");
+
+        assert!(!serialized.contains("\"id\":null"));
+        assert!(!serialized.contains("\"order\":null"));
+        assert!(!serialized.contains("\"pressure\":1.0"));
+        assert!(serialized.contains("\"pressure\":0.5"));
     }
 }

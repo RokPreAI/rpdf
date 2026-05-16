@@ -369,10 +369,10 @@ where
         }
     }
 
-    let serialized = serde_json::to_string_pretty(document)
-        .map_err(|error| format!("Could not serialize document: {error}"))?;
+    let serialized =
+        serde_json::to_vec(document).map_err(|error| format!("Could not serialize document: {error}"))?;
 
-    write_text_document(path, serialized.as_bytes(), "document file")?;
+    write_text_document(path, &serialized, "document file")?;
 
     Ok(())
 }

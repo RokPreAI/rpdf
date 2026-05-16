@@ -1,0 +1,29 @@
+Priority: 2
+Area: Storage
+Status: done
+Depends on: fix-project-save-load-path-flow
+
+Goal:
+Reduce the size of saved project JSON files substantially, especially for simple canvases where the current file size is disproportionately large relative to the amount of content.
+
+Context:
+The user observed that a save file containing only two strokes was already around `46K`, and adding two images barely changed the total size. That strongly suggests a large fixed-cost or redundant payload in the saved document shape, and it leaves substantial room for storage optimization without changing the user-visible project model.
+
+Expected changes:
+
+- inspect the current canvas save payload and identify the largest fixed-size contributors
+- determine whether the bloat comes from redundant selection state, repeated defaults, oversized point payloads, embedded asset data, or other avoidable fields
+- implement a narrow first-pass optimization that materially reduces file size while preserving load compatibility
+- document any compatibility or versioning implications if the saved shape changes
+
+Acceptance criteria:
+
+- A minimal canvas project saves significantly smaller than the current baseline for the same content.
+- Save/load still round-trips correctly after the optimization.
+- Any intentional format change is documented in the worker report.
+- `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml`, and targeted save/load verification pass.
+
+Notes:
+
+- Start by measuring the shape before redesigning it.
+- Prefer removing redundant or transient data over inventing compression infrastructure unless the simple payload cleanup is clearly insufficient.

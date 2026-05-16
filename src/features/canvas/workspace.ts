@@ -3804,11 +3804,11 @@ ${items}
         },
         id: documentId,
         backgroundPattern: toCanvasBackgroundPattern(backgroundPattern),
-        strokes: strokes.map((stroke) => ({
-          id: stroke.id,
+        strokes: strokes.map((stroke, index) => ({
+          id: undefined,
           color: stroke.color,
           width: stroke.baseWidth,
-          order: stroke.order,
+          order: stroke.order === index + 1 ? undefined : stroke.order,
           points: stroke.points.map((point) => ({
             x: point.x,
             y: point.y,
