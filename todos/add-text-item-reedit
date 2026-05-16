@@ -1,0 +1,31 @@
+Priority: 2
+Area: Canvas
+Status: done
+Depends on: fix-text-tool-commit-control, add-text-tool, add-selection-and-move-tools
+
+Goal:
+Allow existing canvas text items to be edited after placement.
+
+Context:
+The first-pass text tool created persistent text items, but re-editing was explicitly out of scope. The user now wants selected text to reopen an editor pre-filled with the existing content so they can delete, modify, or append text without recreating the item from scratch.
+
+Expected changes:
+
+- define the gesture that enters text re-edit mode for an existing text item
+- when a text item is edited, show the same inline editor used for new text placement
+- prefill the editor with the current text content
+- on accept, update the existing text item in place instead of creating a duplicate
+- preserve selection and positioning behavior around the edit flow
+
+Acceptance criteria:
+
+- Selecting an existing text item and invoking edit reopens a text editor at that item.
+- The editor starts with the existing text already filled in.
+- Accepting the edit updates the original text item instead of adding a new one.
+- Deleting all text and accepting follows a defined behavior, either removing the item or leaving it unchanged, but not corrupting canvas state.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Reuse the same editor semantics established by `fix-text-tool-commit-control` so new and existing text behave consistently.
+- Rich text and font-level styling remain out of scope.

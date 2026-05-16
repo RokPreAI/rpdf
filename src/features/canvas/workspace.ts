@@ -162,6 +162,7 @@ type TextEditorSession = {
   element: HTMLTextAreaElement;
   point: Point;
   completionIntent: "commit" | "cancel" | null;
+  existingTextId: string | null;
 };
 
 type PendingTextPlacement = {
@@ -2909,6 +2910,10 @@ ${items}
     return textItem;
   }
 
+  function textIndexById(textId: string) {
+    return texts.findIndex((textItem) => textItem.id === textId);
+  }
+
   function worldToScreen(point: Point) {
     return {
       x: camera.x + point.x * camera.scale,
@@ -2931,17 +2936,45 @@ ${items}
     }
 
     activeTextEditor.completionIntent = "commit";
-    const { element, point } = activeTextEditor;
+    const {
+      element,
+      point,
+      existingTextId,
+    } = activeTextEditor;
     const value = element.value.trim();
     teardownTextEditor();
 
-    if (!value) {
+    if (!value && !existingTextId) {
       redraw();
       return false;
     }
 
-    const textItem = createTextItem(point, value);
-    const textIndex = texts.findIndex((entry) => entry.id === textItem.id);
+    let textIndex = -1;
+
+    if (existingTextId) {
+      textIndex = textIndexById(existingTextId);
+
+      if (textIndex >= 0) {
+        if (!value) {
+          texts.splice(textIndex, 1);
+          setSelection([]);
+          redraw();
+          return false;
+        }
+
+        texts[textIndex].text = value;
+      }
+    }
+
+    if (textIndex < 0) {
+      if (!value) {
+        redraw();
+        return false;
+      }
+
+      const textItem = createTextItem(point, value);
+      textIndex = texts.findIndex((entry) => entry.id === textItem.id);
+    }
 
     if (textIndex >= 0) {
       setSelection([{ kind: "text", index: textIndex }]);
@@ -2961,22 +2994,32 @@ ${items}
     redraw();
   }
 
-  function beginTextEditor(point: Point) {
+  function beginTextEditor(
+    point: Point,
+    options?: {
+      existingText?: CanvasText | null;
+    },
+  ) {
     commitTextEditor();
     setSelection([]);
 
+    const existingText = options?.existingText ?? null;
     const editor = document.createElement("textarea");
-    const screenPoint = worldToScreen(point);
-    const editorFontSize = Math.max(14, Math.round(Math.max(14, baseStrokeWidth * 6) * camera.scale));
+    const editorPoint = existingText ? { x: existingText.x, y: existingText.y } : point;
+    const screenPoint = worldToScreen(editorPoint);
+    const baseFontSize = existingText
+      ? existingText.fontSize
+      : Math.max(14, Math.round(baseStrokeWidth * 6));
+    const editorFontSize = Math.max(14, Math.round(baseFontSize * camera.scale));
 
     editor.className = "canvas-text-editor";
     editor.rows = 3;
     editor.placeholder = "Type text";
-    editor.value = "";
+    editor.value = existingText?.text ?? "";
     editor.style.left = `${screenPoint.x}px`;
     editor.style.top = `${screenPoint.y}px`;
     editor.style.fontSize = `${editorFontSize}px`;
-    editor.style.color = strokeColor;
+    editor.style.color = existingText?.color ?? strokeColor;
     editor.style.fontFamily = TEXT_FONT_FAMILY;
 
     const onEditorKeyDown = (keyEvent: KeyboardEvent) => {
@@ -3012,11 +3055,33 @@ ${items}
     container.querySelector(".canvas-workspace")?.append(editor);
     activeTextEditor = {
       element: editor,
-      point,
+      point: editorPoint,
       completionIntent: null,
+      existingTextId: existingText?.id ?? null,
     };
     editor.focus();
+    editor.setSelectionRange(editor.value.length, editor.value.length);
     redraw();
+  }
+
+  function beginTextEditorForSelectionTarget(target: SelectionTarget | null) {
+    if (!target || target.kind !== "text") {
+      return false;
+    }
+
+    const textItem = texts[target.index];
+
+    if (!textItem) {
+      return false;
+    }
+
+    setSelection([{ kind: "text", index: target.index }]);
+    beginTextEditor({ x: textItem.x, y: textItem.y }, {
+      existingText: {
+        ...textItem,
+      },
+    });
+    return true;
   }
 
   function removeLastVectorItem() {
@@ -3386,6 +3451,21 @@ ${items}
     event.preventDefault();
   };
 
+  const onDoubleClick = (event: MouseEvent) => {
+    if (selectedTool !== "select") {
+      return;
+    }
+
+    const point = screenToWorld(event.clientX, event.clientY);
+    const target = hitTestSelection(point);
+
+    if (!beginTextEditorForSelectionTarget(target)) {
+      return;
+    }
+
+    event.preventDefault();
+  };
+
   const onKeyDown = (event: KeyboardEvent) => {
     const toolButtons = container.querySelectorAll<HTMLButtonElement>(".tool-picker");
 
@@ -3484,6 +3564,7 @@ ${items}
   canvas.addEventListener("pointercancel", onPointerCancel);
   canvas.addEventListener("wheel", onWheel);
   canvas.addEventListener("contextmenu", onContextMenu);
+  canvas.addEventListener("dblclick", onDoubleClick);
   updateCursor();
 
   function isEditableTarget(target: EventTarget | null) {
@@ -3762,6 +3843,7 @@ ${items}
       canvas.removeEventListener("pointercancel", onPointerCancel);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", onContextMenu);
+      canvas.removeEventListener("dblclick", onDoubleClick);
       container.replaceChildren();
     },
   };
