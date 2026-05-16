@@ -1,0 +1,30 @@
+Priority: 3
+Area: Canvas
+Status: done
+Depends on: add-multi-select, add-image-paste, add-pdf-page-import-and-recolor
+
+Goal:
+Add a double-press `Space` shortcut that fits the camera to the full canvas content, so all strokes, shapes, text, images, and imported PDF pages become visible in the viewport at once.
+
+Context:
+The user wants a quick “fit zoom” action tied to a double press of `Space`. The app already has pan/zoom camera logic, so this task should compute the aggregate content bounds and reposition plus rescale the camera to fit everything inside the visible canvas viewport with reasonable padding.
+
+Expected changes:
+
+- inspect the current camera model and `Space` handling in the canvas workspace
+- add double-press detection for `Space` without breaking the existing hold-to-pan behavior
+- compute aggregate canvas bounds across every visible element type
+- update camera position and zoom so the full content set fits in the viewport
+
+Acceptance criteria:
+
+- Double pressing `Space` fits all current canvas content into view.
+- The fit logic includes strokes, shapes, text items, pasted images, and imported PDF page placements.
+- Existing single-press or hold `Space` camera behavior still works.
+- Empty-canvas behavior is safe and does not produce invalid camera math.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Add padding so content is not flush against the viewport edges.
+- Guard against zero-size bounds and invalid zoom values.

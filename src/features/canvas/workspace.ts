@@ -187,6 +187,9 @@ type BackgroundPattern = "dotted" | "vlines" | "hlines" | "grid" | "none";
 const PREFERENCES_STORAGE_KEY = "rpdf.preferences.v1";
 const TEXT_FONT_FAMILY = "\"JetBrains Mono\", \"Fira Code\", monospace";
 const NATIVE_PRESSURE_FRESHNESS_MS = 96;
+const SPACE_DOUBLE_PRESS_WINDOW_MS = 320;
+const FIT_VIEW_MIN_PADDING_PX = 16;
+const FIT_VIEW_MAX_PADDING_PX = 48;
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
   const appConfig = getActiveAppConfig();
@@ -217,7 +220,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <canvas class="canvas-surface"></canvas>
 
       <div class="canvas-toolbar">
-        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} or X pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, text via toolbar, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Wheel or Ctrl+pen drag: zoom | Ctrl+Z: undo
+        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} or X pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, text via toolbar, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Double Space: fit view | Wheel or Ctrl+pen drag: zoom | Ctrl+Z: undo
         <span id="pressure-debug-value" class="pressure-debug-value">Pressure: 0.000</span>
       </div>
 
@@ -314,6 +317,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let latestBrowserPointerType = "none";
   let latestBrowserRawPressure = 0;
   let unlistenNativePressure: UnlistenFn | null = null;
+  let lastSpaceKeyDownAtMs = 0;
 
   const colorVariableByButtonId: Record<string, string> = {
     "color-picker-fg": "--fg",
@@ -1245,6 +1249,91 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
 
     return unionBounds(boundsList);
+  }
+
+  function allCanvasContentBounds() {
+    const boundsList: Bounds[] = [];
+
+    for (const stroke of strokes) {
+      const bounds = strokeExportBounds(stroke);
+
+      if (bounds) {
+        boundsList.push(bounds);
+      }
+    }
+
+    for (const shape of shapes) {
+      boundsList.push(shapeGeometryBounds(shape));
+    }
+
+    for (const textItem of texts) {
+      boundsList.push(textBounds(textItem));
+    }
+
+    for (const image of images) {
+      boundsList.push(normalizeBounds({
+        minX: image.x,
+        minY: image.y,
+        maxX: image.x + image.width,
+        maxY: image.y + image.height,
+      }));
+    }
+
+    for (const pdfPage of pdfPages) {
+      boundsList.push(normalizeBounds({
+        minX: pdfPage.x,
+        minY: pdfPage.y,
+        maxX: pdfPage.x + pdfPage.width,
+        maxY: pdfPage.y + pdfPage.height,
+      }));
+    }
+
+    if (boundsList.length === 0) {
+      return null;
+    }
+
+    return unionBounds(boundsList);
+  }
+
+  function fitCameraToBounds(bounds: Bounds) {
+    const { width, height } = getCanvasSize();
+
+    if (width <= 0 || height <= 0) {
+      return false;
+    }
+
+    const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
+    const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
+    const padding = clamp(Math.min(width, height) * 0.08, FIT_VIEW_MIN_PADDING_PX, FIT_VIEW_MAX_PADDING_PX);
+    const availableWidth = Math.max(1, width - padding * 2);
+    const availableHeight = Math.max(1, height - padding * 2);
+    const nextScale = clamp(Math.min(
+      availableWidth / contentWidth,
+      availableHeight / contentHeight,
+    ), 0.1, 10);
+
+    if (!Number.isFinite(nextScale)) {
+      return false;
+    }
+
+    const centeredOffsetX = (availableWidth - contentWidth * nextScale) / 2;
+    const centeredOffsetY = (availableHeight - contentHeight * nextScale) / 2;
+
+    camera.scale = nextScale;
+    camera.x = padding + centeredOffsetX - bounds.minX * nextScale;
+    camera.y = padding + centeredOffsetY - bounds.minY * nextScale;
+
+    return Number.isFinite(camera.x) && Number.isFinite(camera.y);
+  }
+
+  function fitCanvasContentIntoView() {
+    const bounds = allCanvasContentBounds();
+
+    if (!bounds) {
+      return false;
+    }
+
+    return fitCameraToBounds(bounds);
   }
 
   function isResizableTarget(target: SelectionTarget | null) {
@@ -3554,6 +3643,20 @@ ${items}
     }
 
     if (event.code === "Space") {
+      if (!event.repeat) {
+        const now = performance.now();
+
+        if (lastSpaceKeyDownAtMs > 0 && now - lastSpaceKeyDownAtMs <= SPACE_DOUBLE_PRESS_WINDOW_MS) {
+          lastSpaceKeyDownAtMs = 0;
+
+          if (fitCanvasContentIntoView()) {
+            redraw();
+          }
+        } else {
+          lastSpaceKeyDownAtMs = now;
+        }
+      }
+
       isSpaceDown = true;
       updateCursor();
       event.preventDefault();
