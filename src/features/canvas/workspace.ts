@@ -1713,6 +1713,18 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   function eraseAtPoint(point: Point) {
     const eraserRadius = 12 / camera.scale;
 
+    for (let imageIndex = images.length - 1; imageIndex >= 0; imageIndex -= 1) {
+      const image = images[imageIndex];
+      const withinImage = point.x >= image.x - eraserRadius
+        && point.x <= image.x + image.width + eraserRadius
+        && point.y >= image.y - eraserRadius
+        && point.y <= image.y + image.height + eraserRadius;
+
+      if (withinImage) {
+        images.splice(imageIndex, 1);
+      }
+    }
+
     for (let pdfPageIndex = pdfPages.length - 1; pdfPageIndex >= 0; pdfPageIndex -= 1) {
       const pdfPage = pdfPages[pdfPageIndex];
       const withinPdfPage = point.x >= pdfPage.x - eraserRadius

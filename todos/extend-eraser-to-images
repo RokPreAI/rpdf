@@ -1,0 +1,29 @@
+Priority: 2
+Area: Canvas
+Status: done
+Depends on: add-image-paste, add-pdf-page-import-and-recolor
+
+Goal:
+Make the eraser tool remove raster-backed canvas items such as pasted images and imported PDF page placements, not just strokes or vector items.
+
+Context:
+The user reports that the current eraser tool does not erase images. In this app, images and imported PDF pages are first-class canvas items, so the eraser should treat them as eraseable elements instead of leaving them as a special case that can only be removed through selection workflows.
+
+Expected changes:
+
+- inspect the current eraser hit-testing path in the canvas workspace
+- extend erase hit-testing and deletion behavior to `image` items
+- decide whether imported PDF page placements should follow the same erase path and implement that consistently
+- keep erase behavior bounded to item removal; do not widen into selection redesign
+
+Acceptance criteria:
+
+- Using the eraser over a pasted image removes that image from the canvas.
+- Using the eraser over an imported PDF page placement removes that item too, if the product treats it as an eraseable canvas element.
+- Existing eraser behavior for strokes and shapes remains intact.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Keep the behavior consistent with how the eraser already decides when an element is “hit”.
+- If imported PDF pages need separate handling from normal images, document that clearly in the worker report.
