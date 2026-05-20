@@ -101,6 +101,14 @@ fn is_default_pressure_value(value: &f32) -> bool {
     (*value - 1.0).abs() < f32::EPSILON
 }
 
+fn default_canvas_recolor() -> CanvasPdfPageRecolor {
+    CanvasPdfPageRecolor {
+        enabled: false,
+        foreground: "#c0caf5".to_string(),
+        background: "#1a1b26".to_string(),
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CanvasImagePlacement {
@@ -110,6 +118,8 @@ pub struct CanvasImagePlacement {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+    #[serde(default = "default_canvas_recolor")]
+    pub recolor: CanvasPdfPageRecolor,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -174,7 +184,12 @@ mod tests {
               "x": 0.0,
               "y": 0.0,
               "width": 100.0,
-              "height": 50.0
+              "height": 50.0,
+              "recolor": {
+                "enabled": true,
+                "foreground": "#222222",
+                "background": "#dddddd"
+              }
             }
           ],
           "pdfPages": [
@@ -201,6 +216,7 @@ mod tests {
         assert_eq!(parsed.background_pattern, BackgroundPattern::Dots);
         assert_eq!(parsed.texts[0].font_size, 16.0);
         assert_eq!(parsed.images[0].asset_path, "/tmp/example.png");
+        assert!(parsed.images[0].recolor.enabled);
         assert_eq!(parsed.pdf_pages[0].source_pdf_path, "/tmp/example.pdf");
     }
 

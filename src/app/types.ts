@@ -134,6 +134,7 @@ export type CanvasImagePlacementDocument = {
   y: number;
   width: number;
   height: number;
+  recolor?: PdfRecolorSettingsDocument;
 };
 
 export type CanvasPdfPagePlacementDocument = {

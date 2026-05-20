@@ -69,6 +69,8 @@ type CanvasImage = {
   id: string;
   assetPath: string;
   image: HTMLImageElement;
+  renderedImage: CanvasImageSource;
+  recolor: PdfRecolorSettingsDocument;
   x: number;
   y: number;
   width: number;
@@ -260,6 +262,21 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         </label>
       </div>
 
+      <div id="image-recolor-popover" hidden>
+        <label>
+          <input id="image-recolor-enabled" type="checkbox" />
+          <span>Recolor</span>
+        </label>
+        <label>
+          <span>FG</span>
+          <input id="image-recolor-foreground" type="color" />
+        </label>
+        <label>
+          <span>BG</span>
+          <input id="image-recolor-background" type="color" />
+        </label>
+      </div>
+
       <div class="canvas-pickers">
         <button class="tool-picker active" data-tool="pen" type="button" title="Pen (${configuredToolShortcuts.pen.toUpperCase()} or X)" aria-label="Pen (${configuredToolShortcuts.pen.toUpperCase()} or X)">✎</button>
         <button class="tool-picker" data-tool="rectangle" type="button" title="Rectangle (${configuredToolShortcuts.rectangle.toUpperCase()})" aria-label="Rectangle (${configuredToolShortcuts.rectangle.toUpperCase()})">▭</button>
@@ -285,10 +302,50 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   `;
 
   const canvas = requireElement<HTMLCanvasElement>(container, ".canvas-surface");
+  const imageRecolorPopover = requireElement<HTMLElement>(container, "#image-recolor-popover");
+  const imageRecolorEnabledInput = requireElement<HTMLInputElement>(container, "#image-recolor-enabled");
+  const imageRecolorForegroundInput = requireElement<HTMLInputElement>(container, "#image-recolor-foreground");
+  const imageRecolorBackgroundInput = requireElement<HTMLInputElement>(container, "#image-recolor-background");
   const context = canvas.getContext("2d");
 
   if (!context) {
     throw new Error("Could not get 2D canvas context.");
+  }
+
+  Object.assign(imageRecolorPopover.style, {
+    position: "absolute",
+    zIndex: "3",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 10px",
+    borderRadius: "10px",
+    border: "1px solid rgba(192, 202, 245, 0.22)",
+    background: "rgba(26, 27, 38, 0.94)",
+    color: readCssVariable("--fg") || "#c0caf5",
+    boxShadow: "0 12px 28px rgba(0, 0, 0, 0.28)",
+    backdropFilter: "blur(10px)",
+  });
+
+  for (const label of imageRecolorPopover.querySelectorAll("label")) {
+    Object.assign((label as HTMLElement).style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      fontSize: "12px",
+      whiteSpace: "nowrap",
+    });
+  }
+
+  for (const input of imageRecolorPopover.querySelectorAll("input[type='color']")) {
+    Object.assign((input as HTMLElement).style, {
+      width: "28px",
+      height: "28px",
+      padding: "0",
+      border: "none",
+      background: "transparent",
+      cursor: "pointer",
+    });
   }
 
   const ctx = context;
@@ -411,6 +468,77 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     return getComputedStyle(document.documentElement)
       .getPropertyValue(name)
       .trim();
+  }
+
+  function hexToRgb(hexColor: string) {
+    const normalized = hexColor.replace("#", "");
+    const safe = normalized.length === 3
+      ? normalized.split("").map((value) => `${value}${value}`).join("")
+      : normalized.padEnd(6, "0").slice(0, 6);
+
+    return {
+      r: Number.parseInt(safe.slice(0, 2), 16),
+      g: Number.parseInt(safe.slice(2, 4), 16),
+      b: Number.parseInt(safe.slice(4, 6), 16),
+    };
+  }
+
+  function defaultImageRecolorSettings(): PdfRecolorSettingsDocument {
+    return {
+      enabled: false,
+      foreground: readCssVariable("--fg") || "#c0caf5",
+      background: backgroundColor,
+    };
+  }
+
+  function normalizeImageRecolorSettings(recolor?: Partial<PdfRecolorSettingsDocument> | null): PdfRecolorSettingsDocument {
+    const defaults = defaultImageRecolorSettings();
+
+    return {
+      enabled: recolor?.enabled ?? defaults.enabled,
+      foreground: recolor?.foreground ?? defaults.foreground,
+      background: recolor?.background ?? defaults.background,
+    };
+  }
+
+  function buildRecoloredImage(image: HTMLImageElement, recolor: PdfRecolorSettingsDocument) {
+    if (!recolor.enabled) {
+      return image;
+    }
+
+    const canvasElement = document.createElement("canvas");
+    canvasElement.width = image.naturalWidth;
+    canvasElement.height = image.naturalHeight;
+    const context2d = canvasElement.getContext("2d");
+
+    if (!context2d) {
+      return image;
+    }
+
+    context2d.drawImage(image, 0, 0);
+    const imageData = context2d.getImageData(0, 0, canvasElement.width, canvasElement.height);
+    const foreground = hexToRgb(recolor.foreground);
+    const background = hexToRgb(recolor.background);
+
+    for (let index = 0; index < imageData.data.length; index += 4) {
+      const red = imageData.data[index];
+      const green = imageData.data[index + 1];
+      const blue = imageData.data[index + 2];
+      const alpha = imageData.data[index + 3];
+      const intensity = (red + green + blue) / (255 * 3);
+
+      imageData.data[index] = Math.round(foreground.r * (1 - intensity) + background.r * intensity);
+      imageData.data[index + 1] = Math.round(foreground.g * (1 - intensity) + background.g * intensity);
+      imageData.data[index + 2] = Math.round(foreground.b * (1 - intensity) + background.b * intensity);
+      imageData.data[index + 3] = alpha;
+    }
+
+    context2d.putImageData(imageData, 0, 0);
+    return canvasElement;
+  }
+
+  function syncCanvasImageRenderedImage(canvasImage: CanvasImage) {
+    canvasImage.renderedImage = buildRecoloredImage(canvasImage.image, canvasImage.recolor);
   }
 
   function readPreferences() {
@@ -610,6 +738,53 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     return textItems.every((item) => item.fontSize === firstItem.fontSize)
       ? firstItem.fontSize
       : null;
+  }
+
+  function selectedSingleCanvasImage() {
+    if (selectedItems.length !== 1 || selectedItems[0]?.kind !== "image") {
+      return null;
+    }
+
+    return images[selectedItems[0].index] ?? null;
+  }
+
+  function syncImageRecolorPopover() {
+    const selectedImage = selectedSingleCanvasImage();
+
+    if (!selectedImage) {
+      imageRecolorPopover.hidden = true;
+      return;
+    }
+
+    const topLeft = worldToScreen({ x: selectedImage.x, y: selectedImage.y + selectedImage.height });
+    const margin = 8;
+    imageRecolorPopover.hidden = false;
+    imageRecolorEnabledInput.checked = selectedImage.recolor.enabled;
+    imageRecolorForegroundInput.value = selectedImage.recolor.foreground;
+    imageRecolorBackgroundInput.value = selectedImage.recolor.background;
+
+    const nextLeft = clamp(topLeft.x, margin, Math.max(margin, container.clientWidth - imageRecolorPopover.offsetWidth - margin));
+    const nextTop = clamp(topLeft.y + margin, margin, Math.max(margin, container.clientHeight - imageRecolorPopover.offsetHeight - margin));
+    imageRecolorPopover.style.left = `${nextLeft}px`;
+    imageRecolorPopover.style.top = `${nextTop}px`;
+  }
+
+  function updateSelectedImageRecolor(update: Partial<PdfRecolorSettingsDocument>) {
+    const selectedImage = selectedSingleCanvasImage();
+
+    if (!selectedImage) {
+      return false;
+    }
+
+    const beforeSnapshot = cloneSnapshot(buildCanvasSnapshot());
+    selectedImage.recolor = normalizeImageRecolorSettings({
+      ...selectedImage.recolor,
+      ...update,
+    });
+    syncCanvasImageRenderedImage(selectedImage);
+    commitHistoryAction("recolor-image", beforeSnapshot);
+    redraw();
+    return true;
   }
 
   function applySelectionColor(color: string) {
@@ -892,6 +1067,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       });
     }
 
+    imageRecolorPopover.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+
     strokeWidthInput.value = String(baseStrokeWidth);
     strokeWidthValue.textContent = `${baseStrokeWidth}px`;
     pressureSensitivityInput.checked = pressureSensitivityEnabled;
@@ -952,6 +1131,24 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
       updateActiveTextEditorFontSize();
       syncStyleControls();
+    });
+
+    imageRecolorEnabledInput.addEventListener("input", () => {
+      updateSelectedImageRecolor({
+        enabled: imageRecolorEnabledInput.checked,
+      });
+    });
+
+    imageRecolorForegroundInput.addEventListener("input", () => {
+      updateSelectedImageRecolor({
+        foreground: imageRecolorForegroundInput.value,
+      });
+    });
+
+    imageRecolorBackgroundInput.addEventListener("input", () => {
+      updateSelectedImageRecolor({
+        background: imageRecolorBackgroundInput.value,
+      });
     });
 
   }
@@ -1249,7 +1446,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     for (const canvasImage of images) {
       ctx.drawImage(
-        canvasImage.image,
+        canvasImage.renderedImage,
         canvasImage.x,
         canvasImage.y,
         canvasImage.width,
@@ -1794,6 +1991,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     drawSelectionOverlay();
     drawMarqueeOverlay();
+    syncImageRecolorPopover();
     updateSvgExportState();
   }
 
@@ -2304,6 +2502,7 @@ ${items}
 
     selectedItems = uniqueTargets;
     syncStyleControls();
+    syncImageRecolorPopover();
     updateCursor();
   }
 
@@ -2395,6 +2594,7 @@ ${items}
         y: image.y,
         width: image.width,
         height: image.height,
+        recolor: image.recolor,
       })),
       pdfPages: pdfPages.map((pdfPage) => ({
         id: pdfPage.id,
@@ -2978,6 +3178,8 @@ ${items}
       id,
       assetPath,
       image,
+      renderedImage: image,
+      recolor: defaultImageRecolorSettings(),
       x: centerWorld.x - imageWidth / 2,
       y: centerWorld.y - imageHeight / 2,
       width: imageWidth,
@@ -4095,15 +4297,20 @@ ${items}
       imagePlacements.map(async (placement) => {
         const image = await loadImageFromSource(placement.assetPath);
 
-        return {
+        const canvasImage = {
           id: placement.id,
           assetPath: placement.assetPath,
           image,
+          renderedImage: image,
+          recolor: normalizeImageRecolorSettings(placement.recolor),
           x: placement.x,
           y: placement.y,
           width: placement.width,
           height: placement.height,
         } satisfies CanvasImage;
+
+        syncCanvasImageRenderedImage(canvasImage);
+        return canvasImage;
       }),
     );
 
