@@ -167,6 +167,13 @@ type MoveSession = {
   }>;
 };
 
+type AlignmentGuide = {
+  orientation: "horizontal" | "vertical";
+  coordinate: number;
+  start: number;
+  end: number;
+};
+
 type MarqueeSession = {
   origin: Point;
   current: Point;
@@ -218,6 +225,7 @@ const SPACE_DOUBLE_PRESS_WINDOW_MS = 320;
 const FIT_VIEW_MIN_PADDING_PX = 16;
 const FIT_VIEW_MAX_PADDING_PX = 48;
 const MOVE_SNAP_GRID_SIZE = 50;
+const MOVE_ALIGNMENT_THRESHOLD_PX = 10;
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
   const appConfig = getActiveAppConfig();
@@ -389,6 +397,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let currentShape: Shape | null = null;
   let selectedItems: SelectionTarget[] = [];
   let moveSession: MoveSession | null = null;
+  let activeAlignmentGuides: AlignmentGuide[] = [];
   let activeResizeHandle: ResizeHandle | null = null;
   let resizeSession: ResizeSession | null = null;
   let marqueeSession: MarqueeSession | null = null;
@@ -1583,6 +1592,25 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     return unionBounds(boundsList);
   }
 
+  function offsetBounds(bounds: Bounds, deltaX: number, deltaY: number): Bounds {
+    return {
+      minX: bounds.minX + deltaX,
+      minY: bounds.minY + deltaY,
+      maxX: bounds.maxX + deltaX,
+      maxY: bounds.maxY + deltaY,
+    };
+  }
+
+  function allCanvasTargets() {
+    return [
+      ...strokes.map((_, index) => ({ kind: "stroke" as const, index })),
+      ...shapes.map((_, index) => ({ kind: "shape" as const, index })),
+      ...texts.map((_, index) => ({ kind: "text" as const, index })),
+      ...images.map((_, index) => ({ kind: "image" as const, index })),
+      ...pdfPages.map((_, index) => ({ kind: "pdf_page" as const, index })),
+    ];
+  }
+
   function allCanvasContentBounds() {
     const boundsList: Bounds[] = [];
 
@@ -1730,6 +1758,35 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
 
     return null;
+  }
+
+  function drawAlignmentGuides() {
+    if (activeAlignmentGuides.length === 0) {
+      return;
+    }
+
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.scale, camera.scale);
+    ctx.setLineDash([]);
+    ctx.lineWidth = 2 / camera.scale;
+    ctx.strokeStyle = readCssVariable("--cyan") || "#7dcfff";
+
+    for (const guide of activeAlignmentGuides) {
+      ctx.beginPath();
+
+      if (guide.orientation === "vertical") {
+        ctx.moveTo(guide.coordinate, guide.start);
+        ctx.lineTo(guide.coordinate, guide.end);
+      } else {
+        ctx.moveTo(guide.start, guide.coordinate);
+        ctx.lineTo(guide.end, guide.coordinate);
+      }
+
+      ctx.stroke();
+    }
+
+    ctx.restore();
   }
 
   function drawSelectionOverlay() {
@@ -2004,6 +2061,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       }
     }
 
+    drawAlignmentGuides();
     drawSelectionOverlay();
     drawMarqueeOverlay();
     syncImageRecolorPopover();
@@ -2846,6 +2904,89 @@ ${items}
     } satisfies MoveSession;
   }
 
+  function resolveMoveAlignment(bounds: Bounds) {
+    const alignmentThreshold = MOVE_ALIGNMENT_THRESHOLD_PX / camera.scale;
+    const selectedKeys = selectedKeySet();
+    let bestDeltaX: number | null = null;
+    let bestDeltaY: number | null = null;
+    let bestVerticalGuide: AlignmentGuide | null = null;
+    let bestHorizontalGuide: AlignmentGuide | null = null;
+
+    for (const target of allCanvasTargets()) {
+      const key = selectionTargetKey(target);
+
+      if (key && selectedKeys.has(key)) {
+        continue;
+      }
+
+      const otherBounds = targetBounds(target);
+
+      if (!otherBounds) {
+        continue;
+      }
+
+      const verticalCandidates = [
+        { source: bounds.minX, other: otherBounds.minX },
+        { source: bounds.minX, other: otherBounds.maxX },
+        { source: bounds.maxX, other: otherBounds.minX },
+        { source: bounds.maxX, other: otherBounds.maxX },
+      ];
+
+      for (const candidate of verticalCandidates) {
+        const candidateDelta = candidate.other - candidate.source;
+
+        if (Math.abs(candidateDelta) > alignmentThreshold) {
+          continue;
+        }
+
+        if (bestDeltaX !== null && Math.abs(candidateDelta) >= Math.abs(bestDeltaX)) {
+          continue;
+        }
+
+        bestDeltaX = candidateDelta;
+        bestVerticalGuide = {
+          orientation: "vertical",
+          coordinate: candidate.other,
+          start: Math.min(bounds.minY, otherBounds.minY),
+          end: Math.max(bounds.maxY, otherBounds.maxY),
+        };
+      }
+
+      const horizontalCandidates = [
+        { source: bounds.minY, other: otherBounds.minY },
+        { source: bounds.minY, other: otherBounds.maxY },
+        { source: bounds.maxY, other: otherBounds.minY },
+        { source: bounds.maxY, other: otherBounds.maxY },
+      ];
+
+      for (const candidate of horizontalCandidates) {
+        const candidateDelta = candidate.other - candidate.source;
+
+        if (Math.abs(candidateDelta) > alignmentThreshold) {
+          continue;
+        }
+
+        if (bestDeltaY !== null && Math.abs(candidateDelta) >= Math.abs(bestDeltaY)) {
+          continue;
+        }
+
+        bestDeltaY = candidateDelta;
+        bestHorizontalGuide = {
+          orientation: "horizontal",
+          coordinate: candidate.other,
+          start: Math.min(bounds.minX, otherBounds.minX),
+          end: Math.max(bounds.maxX, otherBounds.maxX),
+        };
+      }
+    }
+
+    return {
+      deltaX: bestDeltaX ?? 0,
+      deltaY: bestDeltaY ?? 0,
+      guides: [bestVerticalGuide, bestHorizontalGuide].filter((guide): guide is AlignmentGuide => Boolean(guide)),
+    };
+  }
+
   function applyMoveSession(session: MoveSession, point: Point, snapToGrid: boolean) {
     let deltaX = point.x - session.origin.x;
     let deltaY = point.y - session.origin.y;
@@ -2855,6 +2996,16 @@ ${items}
       const snappedMinY = Math.round((session.originalSelectionBounds.minY + deltaY) / MOVE_SNAP_GRID_SIZE) * MOVE_SNAP_GRID_SIZE;
       deltaX = snappedMinX - session.originalSelectionBounds.minX;
       deltaY = snappedMinY - session.originalSelectionBounds.minY;
+    }
+
+    activeAlignmentGuides = [];
+
+    if (session.originalSelectionBounds) {
+      const movedBounds = offsetBounds(session.originalSelectionBounds, deltaX, deltaY);
+      const alignment = resolveMoveAlignment(movedBounds);
+      deltaX += alignment.deltaX;
+      deltaY += alignment.deltaY;
+      activeAlignmentGuides = alignment.guides;
     }
 
     for (const targetSession of session.targets) {
@@ -3859,6 +4010,7 @@ ${items}
           startPointerAction();
           activeResizeHandle = resizeHandle;
           moveSession = null;
+          activeAlignmentGuides = [];
           canvas.setPointerCapture(event.pointerId);
           updateCursor();
           redraw();
@@ -3869,6 +4021,7 @@ ${items}
       if (clickedSelectionBounds) {
         activeResizeHandle = resizeHandle;
         moveSession = createMoveSession(point);
+        activeAlignmentGuides = [];
         if (moveSession) {
           startPointerAction();
         }
@@ -3900,6 +4053,7 @@ ${items}
 
       activeResizeHandle = hitTestResizeHandle(point);
       moveSession = pointerSelection && selectionContains(pointerSelection) ? createMoveSession(point) : null;
+      activeAlignmentGuides = [];
       if (moveSession) {
         startPointerAction();
       }
@@ -4080,6 +4234,7 @@ ${items}
     currentStroke = null;
     currentShape = null;
     moveSession = null;
+    activeAlignmentGuides = [];
     resizeSession = null;
     marqueeSession = null;
     pendingTextPlacement = null;
@@ -4102,6 +4257,7 @@ ${items}
     currentShape = null;
     activePointerActionBefore = null;
     moveSession = null;
+    activeAlignmentGuides = [];
     resizeSession = null;
     marqueeSession = null;
     pendingTextPlacement = null;
@@ -4430,6 +4586,7 @@ ${items}
     cancelTextEditor();
     setSelection([]);
     moveSession = null;
+    activeAlignmentGuides = [];
     resizeSession = null;
     marqueeSession = null;
     pendingTextPlacement = null;

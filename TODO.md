@@ -4,6 +4,7 @@
 
 # Done TODOs
 
+- [x] 3 Canvas add-edge-alignment-guides-for-move
 - [x] 3 Canvas add-control-grid-snapping-for-move
 - [x] 2 Canvas add-image-recolor-when-selected
 - [x] 2 Canvas fix-hand-tool-drag-pan-scaling
