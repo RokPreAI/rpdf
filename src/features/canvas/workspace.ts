@@ -56,7 +56,6 @@ type CanvasText = {
   y: number;
 };
 
-type DrawableItem = Stroke | Shape | CanvasText;
 type SvgExportItem = Stroke | Shape | CanvasText;
 type VectorItem = Stroke | Shape;
 
@@ -169,6 +168,12 @@ type PendingTextPlacement = {
   pointerId: number;
 };
 
+type HistoryEntry = {
+  label: string;
+  before: WorkspaceDocumentSnapshot;
+  after: WorkspaceDocumentSnapshot;
+};
+
 type PenZoomSession = {
   pointerId: number;
   lastClientY: number;
@@ -220,7 +225,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <canvas class="canvas-surface"></canvas>
 
       <div class="canvas-toolbar">
-        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} or X pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, text via toolbar, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Double Space: fit view | Wheel or Ctrl+pen drag: zoom | Ctrl+Z: undo
+        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} or X pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, text via toolbar, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Double Space: fit view | Wheel or Ctrl+pen drag: zoom | Ctrl+Z: undo | Ctrl+Shift+Z / Ctrl+Y: redo
         <span id="pressure-debug-value" class="pressure-debug-value">Pressure: 0.000</span>
       </div>
 
@@ -318,6 +323,10 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let latestBrowserRawPressure = 0;
   let unlistenNativePressure: UnlistenFn | null = null;
   let lastSpaceKeyDownAtMs = 0;
+  let activePointerActionBefore: WorkspaceDocumentSnapshot | null = null;
+  const undoHistory: HistoryEntry[] = [];
+  const redoHistory: HistoryEntry[] = [];
+  let isApplyingHistory = false;
 
   const colorVariableByButtonId: Record<string, string> = {
     "color-picker-fg": "--fg",
@@ -591,7 +600,9 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     strokeColor = readCssVariable(cssVariable);
 
     if (selectedItems.length > 0) {
+      const beforeSnapshot = cloneSnapshot(buildCanvasSnapshot());
       applySelectionColor(strokeColor);
+      commitHistoryAction("recolor-selection", beforeSnapshot);
       redraw();
     } else {
       setActiveTool(toolButtons, "pen");
@@ -805,6 +816,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     updateCursor();
 
     strokeWidthInput.addEventListener("input", () => {
+      const beforeSnapshot = selectedItems.length > 0 ? cloneSnapshot(buildCanvasSnapshot()) : null;
       baseStrokeWidth = Math.max(1, Number(strokeWidthInput.value));
       writePreferences({
         defaultStrokeWidth: baseStrokeWidth,
@@ -812,6 +824,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
       if (selectedItems.length > 0) {
         applySelectionStrokeWidth(baseStrokeWidth);
+        commitHistoryAction("set-selection-stroke-width", beforeSnapshot);
         redraw();
       }
 
@@ -2231,6 +2244,105 @@ ${items}
     };
   }
 
+  function cloneSnapshot(snapshot: WorkspaceDocumentSnapshot) {
+    return structuredClone(snapshot) as WorkspaceDocumentSnapshot;
+  }
+
+  function snapshotSignature(snapshot: WorkspaceDocumentSnapshot) {
+    return JSON.stringify(snapshot);
+  }
+
+  function buildCanvasSnapshot(): WorkspaceDocumentSnapshot {
+    const document: CanvasDocument = {
+      version: {
+        major: 1,
+        minor: 0,
+      },
+      id: documentId,
+      backgroundPattern: toCanvasBackgroundPattern(backgroundPattern),
+      strokes: strokes.map((stroke, index) => ({
+        id: undefined,
+        color: stroke.color,
+        width: stroke.baseWidth,
+        order: stroke.order === index + 1 ? undefined : stroke.order,
+        points: stroke.points.map((point) => ({
+          x: point.x,
+          y: point.y,
+          pressure: point.pressure,
+        })),
+      })),
+      shapes: shapes.map(toCanvasShapeDocument),
+      texts: texts.map((textItem) => ({
+        id: textItem.id,
+        text: textItem.text,
+        color: textItem.color,
+        fontSize: textItem.fontSize,
+        order: textItem.order,
+        x: textItem.x,
+        y: textItem.y,
+      })),
+      images: images.map((image) => ({
+        id: image.id,
+        assetPath: image.assetPath,
+        x: image.x,
+        y: image.y,
+        width: image.width,
+        height: image.height,
+      })),
+      pdfPages: pdfPages.map((pdfPage) => ({
+        id: pdfPage.id,
+        sourcePdfPath: pdfPage.sourcePdfPath,
+        pageIndex: pdfPage.pageIndex,
+        assetPath: pdfPage.assetPath,
+        x: pdfPage.x,
+        y: pdfPage.y,
+        width: pdfPage.width,
+        height: pdfPage.height,
+        recolor: pdfPage.recolor,
+      })),
+    };
+
+    return {
+      kind: "canvas",
+      document,
+      selection: currentSelectionSnapshot(),
+    };
+  }
+
+  function startPointerAction() {
+    if (activePointerActionBefore || isApplyingHistory) {
+      return;
+    }
+
+    activePointerActionBefore = cloneSnapshot(buildCanvasSnapshot());
+  }
+
+  function commitHistoryAction(label: string, beforeSnapshot: WorkspaceDocumentSnapshot | null) {
+    if (isApplyingHistory || !beforeSnapshot) {
+      return false;
+    }
+
+    const afterSnapshot = cloneSnapshot(buildCanvasSnapshot());
+
+    if (snapshotSignature(beforeSnapshot) === snapshotSignature(afterSnapshot)) {
+      return false;
+    }
+
+    undoHistory.push({
+      label,
+      before: beforeSnapshot,
+      after: afterSnapshot,
+    });
+    redoHistory.length = 0;
+    return true;
+  }
+
+  function commitPointerAction(label: string) {
+    const beforeSnapshot = activePointerActionBefore;
+    activePointerActionBefore = null;
+    return commitHistoryAction(label, beforeSnapshot);
+  }
+
   function resolveSelectionTarget(selection: CanvasSelectionTargetDocument): SelectionTarget | null {
     if (selection.kind === "image") {
       const index = images.findIndex((image) => image.id === selection.id);
@@ -2747,6 +2859,7 @@ ${items}
   }
 
   function addLoadedImage(image: HTMLImageElement, id: string, assetPath: string) {
+    const beforeSnapshot = cloneSnapshot(buildCanvasSnapshot());
     const { width, height } = getCanvasSize();
     const centerWorld = screenPointToWorld(width / 2, height / 2);
     const maxImageScreenWidth = width * 0.5;
@@ -2764,6 +2877,7 @@ ${items}
       height: imageHeight,
     });
 
+    commitHistoryAction("paste-image", beforeSnapshot);
     redraw();
   }
 
@@ -2771,6 +2885,7 @@ ${items}
     image: HTMLImageElement,
     payload: PendingPdfPageImport,
   ) {
+    const beforeSnapshot = cloneSnapshot(buildCanvasSnapshot());
     const { width, height } = getCanvasSize();
     const centerWorld = screenPointToWorld(width / 2, height / 2);
     const maxImageScreenWidth = width * 0.65;
@@ -2795,6 +2910,7 @@ ${items}
       kind: "pdf_page",
       index: pdfPages.length - 1,
     }]);
+    commitHistoryAction("import-pdf-page", beforeSnapshot);
     redraw();
   }
 
@@ -3110,6 +3226,7 @@ ${items}
       point,
       existingTextId,
     } = activeTextEditor;
+    const beforeSnapshot = cloneSnapshot(buildCanvasSnapshot());
     const value = element.value.trim();
     teardownTextEditor();
 
@@ -3127,6 +3244,7 @@ ${items}
         if (!value) {
           texts.splice(textIndex, 1);
           setSelection([]);
+          commitHistoryAction("edit-text", beforeSnapshot);
           redraw();
           return false;
         }
@@ -3149,6 +3267,7 @@ ${items}
       setSelection([{ kind: "text", index: textIndex }]);
     }
 
+    commitHistoryAction(existingTextId ? "edit-text" : "insert-text", beforeSnapshot);
     redraw();
     return true;
   }
@@ -3253,32 +3372,6 @@ ${items}
     return true;
   }
 
-  function removeLastVectorItem() {
-    const lastStroke = strokes[strokes.length - 1];
-    const lastShape = shapes[shapes.length - 1];
-    const lastText = texts[texts.length - 1];
-    const lastItem = [lastStroke, lastShape, lastText]
-      .filter((item): item is DrawableItem => Boolean(item))
-      .sort((firstItem, secondItem) => secondItem.order - firstItem.order)[0];
-
-    if (lastItem && "points" in lastItem) {
-      strokes.pop();
-      normalizeSelection();
-      return;
-    }
-
-    if (lastItem && "kind" in lastItem) {
-      shapes.pop();
-      normalizeSelection();
-      return;
-    }
-
-    if (lastText) {
-      texts.pop();
-      normalizeSelection();
-    }
-  }
-
   const onPaste = (event: ClipboardEvent) => {
     console.log("[canvas paste] paste event received:", {
       type: event.type,
@@ -3339,6 +3432,7 @@ ${items}
     }
 
     if (selectedTool === "eraser") {
+      startPointerAction();
       eraseAtPoint(point);
       setSelection([]);
       redraw();
@@ -3368,6 +3462,7 @@ ${items}
         resizeSession = createResizeSession(resizeHandle, point);
 
         if (resizeSession) {
+          startPointerAction();
           activeResizeHandle = resizeHandle;
           moveAnchorPoint = null;
           canvas.setPointerCapture(event.pointerId);
@@ -3408,6 +3503,9 @@ ${items}
 
       activeResizeHandle = hitTestResizeHandle(point);
       moveAnchorPoint = pointerSelection && selectionContains(pointerSelection) ? point : null;
+      if (moveAnchorPoint) {
+        startPointerAction();
+      }
       canvas.setPointerCapture(event.pointerId);
       updateCursor();
       redraw();
@@ -3415,6 +3513,7 @@ ${items}
     }
 
     if (isShapeTool(selectedTool)) {
+      startPointerAction();
       selectedShapeKind = selectedTool;
       currentShape = createShape(point);
       canvas.setPointerCapture(event.pointerId);
@@ -3426,6 +3525,7 @@ ${items}
       return;
     }
 
+    startPointerAction();
     currentStroke = createStroke(point, pressure);
     redraw();
   };
@@ -3566,6 +3666,19 @@ ${items}
       }
     }
 
+    if (resizeSession) {
+      commitPointerAction("resize-selection");
+    } else if (moveAnchorPoint && selectedItems.length > 0) {
+      commitPointerAction("move-selection");
+    } else if (currentStroke) {
+      commitPointerAction("draw-stroke");
+    } else if (currentShape) {
+      commitPointerAction("draw-shape");
+    } else if (selectedTool === "eraser") {
+      commitPointerAction("erase-items");
+    } else {
+      activePointerActionBefore = null;
+    }
     currentStroke = null;
     currentShape = null;
     moveAnchorPoint = null;
@@ -3589,6 +3702,7 @@ ${items}
     setPressureDebugValue(0);
     currentStroke = null;
     currentShape = null;
+    activePointerActionBefore = null;
     moveAnchorPoint = null;
     resizeSession = null;
     marqueeSession = null;
@@ -3662,23 +3776,22 @@ ${items}
       event.preventDefault();
     }
 
-    if (event.ctrlKey && event.key.toLowerCase() === "z") {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && event.shiftKey) {
       event.preventDefault();
-      removeLastVectorItem();
+      void redoLastAction();
+      return;
+    }
 
-      if (
-        selectedItems.some((target) => (
-          (target.kind === "stroke" && target.index >= strokes.length)
-          || (target.kind === "shape" && target.index >= shapes.length)
-          || (target.kind === "text" && target.index >= texts.length)
-          || (target.kind === "image" && target.index >= images.length)
-          || (target.kind === "pdf_page" && target.index >= pdfPages.length)
-        ))
-      ) {
-        setSelection([]);
-      }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
+      event.preventDefault();
+      void redoLastAction();
+      return;
+    }
 
-      redraw();
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      void undoLastAction();
+      return;
     }
 
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
@@ -3689,7 +3802,10 @@ ${items}
     }
 
     if (event.key === "Delete") {
+      const beforeSnapshot = cloneSnapshot(buildCanvasSnapshot());
+
       if (removeSelectedItems()) {
+        commitHistoryAction("delete-selection", beforeSnapshot);
         event.preventDefault();
         redraw();
       }
@@ -3896,133 +4012,134 @@ ${items}
     pdfPages.push(...loadedPdfPages);
   }
 
+  async function applyCanvasSnapshot(snapshot: WorkspaceDocumentSnapshot) {
+    if (snapshot.kind !== "canvas") {
+      throw new Error("Canvas workspace cannot load a non-canvas document.");
+    }
+
+    documentId = snapshot.document.id;
+    cancelTextEditor();
+    setSelection([]);
+    moveAnchorPoint = null;
+    resizeSession = null;
+    marqueeSession = null;
+    pendingTextPlacement = null;
+    penZoomSession = null;
+    activePointerActionBefore = null;
+    currentStroke = null;
+    currentShape = null;
+    activeResizeHandle = null;
+    isPanning = false;
+    strokes.length = 0;
+    shapes.length = 0;
+    texts.length = 0;
+    images.length = 0;
+    pdfPages.length = 0;
+
+    strokes.push(
+      ...snapshot.document.strokes.map((stroke, index) => ({
+        id: stroke.id ?? crypto.randomUUID(),
+        color: stroke.color,
+        baseWidth: stroke.width,
+        order: stroke.order ?? index + 1,
+        points: stroke.points.map((point) => ({
+          x: point.x,
+          y: point.y,
+          pressure: point.pressure,
+        })),
+      })),
+    );
+
+    shapes.push(
+      ...snapshot.document.shapes.map((shape, index) => ({
+        id: shape.id,
+        kind: shape.kind,
+        color: shape.color,
+        baseWidth: shape.width,
+        order: shape.order ?? snapshot.document.strokes.length + index + 1,
+        start: {
+          x: shape.start.x,
+          y: shape.start.y,
+        },
+        end: {
+          x: shape.end.x,
+          y: shape.end.y,
+        },
+      })),
+    );
+
+    texts.push(
+      ...(snapshot.document.texts ?? []).map((textItem, index) => ({
+        id: textItem.id,
+        text: textItem.text,
+        color: textItem.color,
+        fontSize: textItem.fontSize,
+        order: textItem.order ?? snapshot.document.strokes.length + snapshot.document.shapes.length + index + 1,
+        x: textItem.x,
+        y: textItem.y,
+      })),
+    );
+
+    nextVectorOrder = Math.max(
+      1,
+      ...strokes.map((stroke) => stroke.order + 1),
+      ...shapes.map((shape) => shape.order + 1),
+      ...texts.map((textItem) => textItem.order + 1),
+    );
+
+    await importImages(snapshot.document.images);
+    await importPdfPages(snapshot.document.pdfPages ?? []);
+    setSelection(resolveSelection(snapshot.selection));
+    syncStyleControls();
+    redraw();
+  }
+
+  async function undoLastAction() {
+    const historyEntry = undoHistory.pop();
+
+    if (!historyEntry) {
+      return false;
+    }
+
+    redoHistory.push(historyEntry);
+    isApplyingHistory = true;
+
+    try {
+      await applyCanvasSnapshot(cloneSnapshot(historyEntry.before));
+    } finally {
+      isApplyingHistory = false;
+    }
+
+    return true;
+  }
+
+  async function redoLastAction() {
+    const historyEntry = redoHistory.pop();
+
+    if (!historyEntry) {
+      return false;
+    }
+
+    undoHistory.push(historyEntry);
+    isApplyingHistory = true;
+
+    try {
+      await applyCanvasSnapshot(cloneSnapshot(historyEntry.after));
+    } finally {
+      isApplyingHistory = false;
+    }
+
+    return true;
+  }
+
   return {
     exportDocument(): WorkspaceDocumentSnapshot {
-      const document: CanvasDocument = {
-        version: {
-          major: 1,
-          minor: 0,
-        },
-        id: documentId,
-        backgroundPattern: toCanvasBackgroundPattern(backgroundPattern),
-        strokes: strokes.map((stroke, index) => ({
-          id: undefined,
-          color: stroke.color,
-          width: stroke.baseWidth,
-          order: stroke.order === index + 1 ? undefined : stroke.order,
-          points: stroke.points.map((point) => ({
-            x: point.x,
-            y: point.y,
-            pressure: point.pressure,
-          })),
-        })),
-        shapes: shapes.map(toCanvasShapeDocument),
-        texts: texts.map((textItem) => ({
-          id: textItem.id,
-          text: textItem.text,
-          color: textItem.color,
-          fontSize: textItem.fontSize,
-          order: textItem.order,
-          x: textItem.x,
-          y: textItem.y,
-        })),
-        images: images.map((image) => ({
-          id: image.id,
-          assetPath: image.assetPath,
-          x: image.x,
-          y: image.y,
-          width: image.width,
-          height: image.height,
-        })),
-        pdfPages: pdfPages.map((pdfPage) => ({
-          id: pdfPage.id,
-          sourcePdfPath: pdfPage.sourcePdfPath,
-          pageIndex: pdfPage.pageIndex,
-          assetPath: pdfPage.assetPath,
-          x: pdfPage.x,
-          y: pdfPage.y,
-          width: pdfPage.width,
-          height: pdfPage.height,
-          recolor: pdfPage.recolor,
-        })),
-      };
-
-      return {
-        kind: "canvas",
-        document,
-        selection: currentSelectionSnapshot(),
-      };
+      return buildCanvasSnapshot();
     },
     async importDocument(snapshot) {
-      if (snapshot.kind !== "canvas") {
-        throw new Error("Canvas workspace cannot load a non-canvas document.");
-      }
-
-      documentId = snapshot.document.id;
-      cancelTextEditor();
-      setSelection([]);
-      moveAnchorPoint = null;
-      strokes.length = 0;
-      shapes.length = 0;
-      texts.length = 0;
-      pdfPages.length = 0;
-
-      strokes.push(
-        ...snapshot.document.strokes.map((stroke, index) => ({
-          id: stroke.id ?? crypto.randomUUID(),
-          color: stroke.color,
-          baseWidth: stroke.width,
-          order: stroke.order ?? index + 1,
-          points: stroke.points.map((point) => ({
-            x: point.x,
-            y: point.y,
-            pressure: point.pressure,
-          })),
-        })),
-      );
-
-      shapes.push(
-        ...snapshot.document.shapes.map((shape, index) => ({
-          id: shape.id,
-          kind: shape.kind,
-          color: shape.color,
-          baseWidth: shape.width,
-          order: shape.order ?? snapshot.document.strokes.length + index + 1,
-          start: {
-            x: shape.start.x,
-            y: shape.start.y,
-          },
-          end: {
-            x: shape.end.x,
-            y: shape.end.y,
-          },
-        })),
-      );
-
-      texts.push(
-        ...(snapshot.document.texts ?? []).map((textItem, index) => ({
-          id: textItem.id,
-          text: textItem.text,
-          color: textItem.color,
-          fontSize: textItem.fontSize,
-          order: textItem.order ?? snapshot.document.strokes.length + snapshot.document.shapes.length + index + 1,
-          x: textItem.x,
-          y: textItem.y,
-        })),
-      );
-
-      nextVectorOrder = Math.max(
-        1,
-        ...strokes.map((stroke) => stroke.order + 1),
-        ...shapes.map((shape) => shape.order + 1),
-        ...texts.map((textItem) => textItem.order + 1),
-      );
-
-      await importImages(snapshot.document.images);
-      await importPdfPages(snapshot.document.pdfPages ?? []);
-      setSelection(resolveSelection(snapshot.selection));
-      syncStyleControls();
-      redraw();
+      undoHistory.length = 0;
+      redoHistory.length = 0;
+      await applyCanvasSnapshot(snapshot);
     },
     destroy() {
       cancelTextEditor();

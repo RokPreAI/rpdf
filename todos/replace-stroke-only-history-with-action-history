@@ -1,0 +1,38 @@
+Priority: 1
+Area: Canvas
+Status: done
+Depends on: add-multi-select
+
+Goal:
+Replace the current stroke-focused undo logic with real action-based canvas history that supports undo and redo for all important canvas edits, not just drawing.
+
+Context:
+The user confirmed that `Ctrl+Z` works for simple stroke undo but fails as a general history system, especially for delete and restore flows. The current behavior appears to be tied too closely to stroke-list mutation. The app now needs a real action log or equivalent undo/redo model that can reverse and reapply user-intent edits across item types.
+
+Expected changes:
+
+- inspect the current canvas history implementation and identify where it assumes stroke-only operations
+- add redo support in addition to undo
+- make history cover at least:
+  - drawing strokes
+  - deleting selected items
+  - recoloring selected vector items
+  - pasting images
+  - resizing items
+  - text content edits
+- ensure history works for mixed canvas item types, not just strokes
+- update keyboard handling so redo has an explicit shortcut path in addition to undo
+
+Acceptance criteria:
+
+- Undo and redo work for draw, delete, recolor, paste-image, resize, and text-content changes.
+- Undo after deleting an item restores it instead of losing it permanently.
+- Redo reapplies the undone action correctly.
+- The implementation is clearly action- or snapshot-based around user edits rather than a stroke-only side list.
+- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml` pass.
+
+Notes:
+
+- Favor one coherent history model instead of per-feature one-off undo exceptions.
+- Keep scope on Canvas Mode behavior only.
+- If some low-level edit path cannot be made undoable in the same slice, document the exact gap explicitly in the task report.
