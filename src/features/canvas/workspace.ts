@@ -153,6 +153,20 @@ type ResizeSession = {
   }>;
 };
 
+type MoveSession = {
+  origin: Point;
+  originalSelectionBounds: Bounds | null;
+  targets: Array<{
+    target: SelectionTarget;
+    originalStrokePoints?: StrokePoint[];
+    originalShapePoints?: {
+      start: Point;
+      end: Point;
+    };
+    originalPoint?: Point;
+  }>;
+};
+
 type MarqueeSession = {
   origin: Point;
   current: Point;
@@ -203,6 +217,7 @@ const NATIVE_PRESSURE_FRESHNESS_MS = 96;
 const SPACE_DOUBLE_PRESS_WINDOW_MS = 320;
 const FIT_VIEW_MIN_PADDING_PX = 16;
 const FIT_VIEW_MAX_PADDING_PX = 48;
+const MOVE_SNAP_GRID_SIZE = 50;
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
   const appConfig = getActiveAppConfig();
@@ -373,7 +388,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let currentStroke: Stroke | null = null;
   let currentShape: Shape | null = null;
   let selectedItems: SelectionTarget[] = [];
-  let moveAnchorPoint: Point | null = null;
+  let moveSession: MoveSession | null = null;
   let activeResizeHandle: ResizeHandle | null = null;
   let resizeSession: ResizeSession | null = null;
   let marqueeSession: MarqueeSession | null = null;
@@ -2778,72 +2793,136 @@ ${items}
     return null;
   }
 
-  function moveSelectedItems(deltaX: number, deltaY: number) {
+  function createMoveSession(origin: Point) {
     if (selectedItems.length === 0) {
-      return;
+      return null;
     }
 
-    for (const target of selectedItems) {
+    return {
+      origin,
+      originalSelectionBounds: currentSelectionBounds(),
+      targets: selectedItems.map((target) => {
+        if (target.kind === "image") {
+          const image = images[target.index];
+          return {
+            target,
+            originalPoint: image ? { x: image.x, y: image.y } : undefined,
+          };
+        }
+
+        if (target.kind === "pdf_page") {
+          const pdfPage = pdfPages[target.index];
+          return {
+            target,
+            originalPoint: pdfPage ? { x: pdfPage.x, y: pdfPage.y } : undefined,
+          };
+        }
+
+        if (target.kind === "shape") {
+          const shape = shapes[target.index];
+          return {
+            target,
+            originalShapePoints: shape ? {
+              start: { ...shape.start },
+              end: { ...shape.end },
+            } : undefined,
+          };
+        }
+
+        if (target.kind === "text") {
+          const textItem = texts[target.index];
+          return {
+            target,
+            originalPoint: textItem ? { x: textItem.x, y: textItem.y } : undefined,
+          };
+        }
+
+        const stroke = strokes[target.index];
+        return {
+          target,
+          originalStrokePoints: stroke ? stroke.points.map((point) => ({ ...point })) : undefined,
+        };
+      }),
+    } satisfies MoveSession;
+  }
+
+  function applyMoveSession(session: MoveSession, point: Point, snapToGrid: boolean) {
+    let deltaX = point.x - session.origin.x;
+    let deltaY = point.y - session.origin.y;
+
+    if (snapToGrid && session.originalSelectionBounds) {
+      const snappedMinX = Math.round((session.originalSelectionBounds.minX + deltaX) / MOVE_SNAP_GRID_SIZE) * MOVE_SNAP_GRID_SIZE;
+      const snappedMinY = Math.round((session.originalSelectionBounds.minY + deltaY) / MOVE_SNAP_GRID_SIZE) * MOVE_SNAP_GRID_SIZE;
+      deltaX = snappedMinX - session.originalSelectionBounds.minX;
+      deltaY = snappedMinY - session.originalSelectionBounds.minY;
+    }
+
+    for (const targetSession of session.targets) {
+      const { target } = targetSession;
+
       if (target.kind === "image") {
         const image = images[target.index];
 
-        if (!image) {
+        if (!image || !targetSession.originalPoint) {
           continue;
         }
 
-        image.x += deltaX;
-        image.y += deltaY;
+        image.x = targetSession.originalPoint.x + deltaX;
+        image.y = targetSession.originalPoint.y + deltaY;
         continue;
       }
 
       if (target.kind === "pdf_page") {
         const pdfPage = pdfPages[target.index];
 
-        if (!pdfPage) {
+        if (!pdfPage || !targetSession.originalPoint) {
           continue;
         }
 
-        pdfPage.x += deltaX;
-        pdfPage.y += deltaY;
+        pdfPage.x = targetSession.originalPoint.x + deltaX;
+        pdfPage.y = targetSession.originalPoint.y + deltaY;
         continue;
       }
 
       if (target.kind === "shape") {
         const shape = shapes[target.index];
+        const originalShapePoints = targetSession.originalShapePoints;
 
-        if (!shape) {
+        if (!shape || !originalShapePoints) {
           continue;
         }
 
-        shape.start.x += deltaX;
-        shape.start.y += deltaY;
-        shape.end.x += deltaX;
-        shape.end.y += deltaY;
+        shape.start.x = originalShapePoints.start.x + deltaX;
+        shape.start.y = originalShapePoints.start.y + deltaY;
+        shape.end.x = originalShapePoints.end.x + deltaX;
+        shape.end.y = originalShapePoints.end.y + deltaY;
         continue;
       }
 
       if (target.kind === "text") {
         const textItem = texts[target.index];
 
-        if (!textItem) {
+        if (!textItem || !targetSession.originalPoint) {
           continue;
         }
 
-        textItem.x += deltaX;
-        textItem.y += deltaY;
+        textItem.x = targetSession.originalPoint.x + deltaX;
+        textItem.y = targetSession.originalPoint.y + deltaY;
         continue;
       }
 
       const stroke = strokes[target.index];
+      const originalStrokePoints = targetSession.originalStrokePoints;
 
-      if (!stroke) {
+      if (!stroke || !originalStrokePoints) {
         continue;
       }
 
-      for (const point of stroke.points) {
-        point.x += deltaX;
-        point.y += deltaY;
-      }
+      stroke.points = originalStrokePoints.map((originalPoint) => ({
+        ...originalPoint,
+        x: originalPoint.x + deltaX,
+        y: originalPoint.y + deltaY,
+      }));
     }
   }
 
@@ -3779,7 +3858,7 @@ ${items}
         if (resizeSession) {
           startPointerAction();
           activeResizeHandle = resizeHandle;
-          moveAnchorPoint = null;
+          moveSession = null;
           canvas.setPointerCapture(event.pointerId);
           updateCursor();
           redraw();
@@ -3789,7 +3868,10 @@ ${items}
 
       if (clickedSelectionBounds) {
         activeResizeHandle = resizeHandle;
-        moveAnchorPoint = point;
+        moveSession = createMoveSession(point);
+        if (moveSession) {
+          startPointerAction();
+        }
         canvas.setPointerCapture(event.pointerId);
         updateCursor();
         redraw();
@@ -3817,8 +3899,8 @@ ${items}
       }
 
       activeResizeHandle = hitTestResizeHandle(point);
-      moveAnchorPoint = pointerSelection && selectionContains(pointerSelection) ? point : null;
-      if (moveAnchorPoint) {
+      moveSession = pointerSelection && selectionContains(pointerSelection) ? createMoveSession(point) : null;
+      if (moveSession) {
         startPointerAction();
       }
       canvas.setPointerCapture(event.pointerId);
@@ -3906,15 +3988,12 @@ ${items}
         return;
       }
 
-      if (selectedItems.length === 0 || !moveAnchorPoint || (event.buttons & 1) === 0) {
+      if (selectedItems.length === 0 || !moveSession || (event.buttons & 1) === 0) {
         updateCursor();
         return;
       }
 
-      const deltaX = point.x - moveAnchorPoint.x;
-      const deltaY = point.y - moveAnchorPoint.y;
-      moveSelectedItems(deltaX, deltaY);
-      moveAnchorPoint = point;
+      applyMoveSession(moveSession, point, event.ctrlKey);
       redraw();
       return;
     }
@@ -3987,7 +4066,7 @@ ${items}
 
     if (resizeSession) {
       commitPointerAction("resize-selection");
-    } else if (moveAnchorPoint && selectedItems.length > 0) {
+    } else if (moveSession && selectedItems.length > 0) {
       commitPointerAction("move-selection");
     } else if (currentStroke) {
       commitPointerAction("draw-stroke");
@@ -4000,7 +4079,7 @@ ${items}
     }
     currentStroke = null;
     currentShape = null;
-    moveAnchorPoint = null;
+    moveSession = null;
     resizeSession = null;
     marqueeSession = null;
     pendingTextPlacement = null;
@@ -4022,7 +4101,7 @@ ${items}
     currentStroke = null;
     currentShape = null;
     activePointerActionBefore = null;
-    moveAnchorPoint = null;
+    moveSession = null;
     resizeSession = null;
     marqueeSession = null;
     pendingTextPlacement = null;
@@ -4350,7 +4429,7 @@ ${items}
     documentId = snapshot.document.id;
     cancelTextEditor();
     setSelection([]);
-    moveAnchorPoint = null;
+    moveSession = null;
     resizeSession = null;
     marqueeSession = null;
     pendingTextPlacement = null;
