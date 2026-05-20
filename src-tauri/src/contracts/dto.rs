@@ -134,6 +134,10 @@ impl Default for AppShortcutsConfigDto {
     }
 }
 
+fn default_text_tool_shortcut() -> String {
+    "t".to_string()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppToolShortcutsDto {
@@ -144,6 +148,8 @@ pub struct AppToolShortcutsDto {
     pub ellipse: String,
     pub line: String,
     pub arrow: String,
+    #[serde(default = "default_text_tool_shortcut")]
+    pub text: String,
     pub eraser: String,
 }
 
@@ -157,6 +163,7 @@ impl Default for AppToolShortcutsDto {
             ellipse: "o".to_string(),
             line: "l".to_string(),
             arrow: "a".to_string(),
+            text: default_text_tool_shortcut(),
             eraser: "e".to_string(),
         }
     }

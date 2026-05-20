@@ -199,15 +199,16 @@ const FIT_VIEW_MAX_PADDING_PX = 48;
 
 export function mountCanvasWorkspace(container: HTMLElement): WorkspaceController {
   const appConfig = getActiveAppConfig();
-  const configuredToolShortcuts = appConfig?.shortcuts.tools ?? {
-    select: "v",
-    pan: "h",
-    pen: "p",
-    rectangle: "r",
-    ellipse: "o",
-    line: "l",
-    arrow: "a",
-    eraser: "e",
+  const configuredToolShortcuts = {
+    select: appConfig?.shortcuts.tools.select || "v",
+    pan: appConfig?.shortcuts.tools.pan || "h",
+    pen: appConfig?.shortcuts.tools.pen || "p",
+    rectangle: appConfig?.shortcuts.tools.rectangle || "r",
+    ellipse: appConfig?.shortcuts.tools.ellipse || "o",
+    line: appConfig?.shortcuts.tools.line || "l",
+    arrow: appConfig?.shortcuts.tools.arrow || "a",
+    text: appConfig?.shortcuts.tools.text || "t",
+    eraser: appConfig?.shortcuts.tools.eraser || "e",
   };
   const configuredColorShortcuts = appConfig?.shortcuts.colors ?? {
     fg: "1",
@@ -226,7 +227,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       <canvas class="canvas-surface"></canvas>
 
       <div class="canvas-toolbar">
-        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} or X pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, text via toolbar, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Double Space: fit view | Wheel or Ctrl+pen drag: zoom | Ctrl+Z: undo | Ctrl+Shift+Z / Ctrl+Y: redo
+        Shortcuts: ${configuredToolShortcuts.select.toUpperCase()} select, ${configuredToolShortcuts.pan.toUpperCase()} pan, ${configuredToolShortcuts.pen.toUpperCase()} or X pen, ${configuredToolShortcuts.rectangle.toUpperCase()} rectangle, ${configuredToolShortcuts.ellipse.toUpperCase()} ellipse, ${configuredToolShortcuts.line.toUpperCase()} line, ${configuredToolShortcuts.arrow.toUpperCase()} arrow, ${configuredToolShortcuts.text.toUpperCase()} text, ${configuredToolShortcuts.eraser.toUpperCase()} eraser, colors ${configuredColorShortcuts.fg} to ${configuredColorShortcuts.purple} | Shift/Ctrl click: multi-select | Right/Middle/Space drag: pan | Double Space: fit view | Wheel or Ctrl+pen drag: zoom | Ctrl+Z: undo | Ctrl+Shift+Z / Ctrl+Y: redo
         <span id="pressure-debug-value" class="pressure-debug-value">Pressure: 0.000</span>
       </div>
 
@@ -260,7 +261,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         <button class="tool-picker" data-tool="ellipse" type="button" title="Ellipse (${configuredToolShortcuts.ellipse.toUpperCase()})" aria-label="Ellipse (${configuredToolShortcuts.ellipse.toUpperCase()})">◯</button>
         <button class="tool-picker" data-tool="line" type="button" title="Line (${configuredToolShortcuts.line.toUpperCase()})" aria-label="Line (${configuredToolShortcuts.line.toUpperCase()})">／</button>
         <button class="tool-picker" data-tool="arrow" type="button" title="Arrow (${configuredToolShortcuts.arrow.toUpperCase()})" aria-label="Arrow (${configuredToolShortcuts.arrow.toUpperCase()})">↗</button>
-        <button class="tool-picker" data-tool="text" type="button" title="Text" aria-label="Text">T</button>
+        <button class="tool-picker" data-tool="text" type="button" title="Text (${configuredToolShortcuts.text.toUpperCase()})" aria-label="Text (${configuredToolShortcuts.text.toUpperCase()})">T</button>
         <button class="tool-picker" data-tool="select" type="button" title="Select (${configuredToolShortcuts.select.toUpperCase()})" aria-label="Select (${configuredToolShortcuts.select.toUpperCase()})">⌖</button>
         <button class="tool-picker" data-tool="pan" type="button" title="Pan (${configuredToolShortcuts.pan.toUpperCase()} or Space)" aria-label="Pan (${configuredToolShortcuts.pan.toUpperCase()} or Space)">✥</button>
         <button class="tool-picker" data-tool="eraser" type="button" title="Eraser (${configuredToolShortcuts.eraser.toUpperCase()})" aria-label="Eraser (${configuredToolShortcuts.eraser.toUpperCase()})">⌫</button>

@@ -41,6 +41,7 @@ export type AppToolShortcutsConfig = {
   ellipse: string;
   line: string;
   arrow: string;
+  text: string;
   eraser: string;
 };
 
