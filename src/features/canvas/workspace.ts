@@ -162,6 +162,7 @@ type TextEditorSession = {
   point: Point;
   completionIntent: "commit" | "cancel" | null;
   existingTextId: string | null;
+  fontSize: number;
 };
 
 type PendingTextPlacement = {
@@ -246,6 +247,11 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
           <input id="input-quality" type="range" min="1" max="5" step="1" value="3" />
           <output id="input-quality-value">3/5</output>
         </label>
+        <label class="stroke-control-field" for="text-font-size">
+          <span>Text size</span>
+          <input id="text-font-size" type="range" min="12" max="96" step="1" value="24" />
+          <output id="text-font-size-value">24px</output>
+        </label>
       </div>
 
       <div class="canvas-pickers">
@@ -317,6 +323,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let baseStrokeWidth = preferences.defaultStrokeWidth;
   let inputQuality = preferences.defaultInputQuality;
   let pressureSensitivityEnabled = preferences.pressureSensitivityEnabled;
+  let baseTextFontSize = preferences.defaultTextFontSize;
   let latestNativePressureSample: NativePressureSample | null = null;
   let latestNativePressureReceivedAtMs = 0;
   let latestBrowserPointerType = "none";
@@ -352,6 +359,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     }
 
     return clamp(Math.round(value), 1, 5);
+  }
+
+  function clampTextFontSize(value: number) {
+    if (!Number.isFinite(value)) {
+      return 24;
+    }
+
+    return clamp(Math.round(value), 12, 96);
   }
 
   function isShapeTool(tool: Tool) {
@@ -401,6 +416,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         defaultStrokeWidth: 3,
         defaultInputQuality: 3,
         pressureSensitivityEnabled: true,
+        defaultTextFontSize: 24,
         defaultShapeKind: "rectangle" as ShapeKind,
         defaultCanvasColor: fallbackColor,
       };
@@ -411,6 +427,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         defaultStrokeWidth: number;
         defaultInputQuality: number;
         pressureSensitivityEnabled: boolean;
+        defaultTextFontSize: number;
         defaultShapeKind: ShapeKind;
         defaultCanvasColor: string;
       }>;
@@ -419,6 +436,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         defaultStrokeWidth: typeof parsed.defaultStrokeWidth === "number" ? parsed.defaultStrokeWidth : 3,
         defaultInputQuality: clampInputQuality(parsed.defaultInputQuality ?? 3),
         pressureSensitivityEnabled: parsed.pressureSensitivityEnabled ?? true,
+        defaultTextFontSize: typeof parsed.defaultTextFontSize === "number" ? clamp(Math.round(parsed.defaultTextFontSize), 12, 96) : 24,
         defaultShapeKind: parsed.defaultShapeKind ?? "rectangle",
         defaultCanvasColor: parsed.defaultCanvasColor ?? fallbackColor,
       };
@@ -428,6 +446,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         defaultStrokeWidth: 3,
         defaultInputQuality: 3,
         pressureSensitivityEnabled: true,
+        defaultTextFontSize: 24,
         defaultShapeKind: "rectangle" as ShapeKind,
         defaultCanvasColor: fallbackColor,
       };
@@ -438,6 +457,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     defaultStrokeWidth: number;
     defaultInputQuality: number;
     pressureSensitivityEnabled: boolean;
+    defaultTextFontSize: number;
     defaultShapeKind: ShapeKind;
     defaultCanvasColor: string;
   }>) {
@@ -561,6 +581,26 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       : null;
   }
 
+  function selectedTextItems() {
+    return selectedItems
+      .map((target) => target.kind === "text" ? texts[target.index] ?? null : null)
+      .filter((item): item is CanvasText => Boolean(item));
+  }
+
+  function currentSelectionTextFontSize() {
+    const textItems = selectedTextItems();
+
+    if (textItems.length === 0 || textItems.length !== selectedItems.length) {
+      return null;
+    }
+
+    const [firstItem] = textItems;
+
+    return textItems.every((item) => item.fontSize === firstItem.fontSize)
+      ? firstItem.fontSize
+      : null;
+  }
+
   function applySelectionColor(color: string) {
     const vectorItems = selectedVectorItems();
 
@@ -585,6 +625,21 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
 
     for (const item of vectorItems) {
       item.baseWidth = normalizedWidth;
+    }
+
+    return true;
+  }
+
+  function applySelectionTextFontSize(fontSize: number) {
+    const normalizedFontSize = clampTextFontSize(fontSize);
+    const textItems = selectedTextItems();
+
+    if (textItems.length === 0) {
+      return false;
+    }
+
+    for (const item of textItems) {
+      item.fontSize = normalizedFontSize;
     }
 
     return true;
@@ -617,10 +672,14 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     const colorButtons = container.querySelectorAll<HTMLButtonElement>(".color-picker");
     const strokeWidthInput = container.querySelector<HTMLInputElement>("#stroke-width");
     const strokeWidthValue = container.querySelector<HTMLOutputElement>("#stroke-width-value");
+    const textFontSizeInput = container.querySelector<HTMLInputElement>("#text-font-size");
+    const textFontSizeValue = container.querySelector<HTMLOutputElement>("#text-font-size-value");
     const selectionColor = currentSelectionColor();
     const selectionStrokeWidth = currentSelectionStrokeWidth();
+    const selectionTextFontSize = currentSelectionTextFontSize();
     const activeColor = selectionColor ?? strokeColor;
     const activeWidth = selectionStrokeWidth ?? baseStrokeWidth;
+    const activeTextFontSize = selectionTextFontSize ?? baseTextFontSize;
 
     for (const colorButton of colorButtons) {
       const cssVariable = colorVariableByButtonId[colorButton.id];
@@ -637,6 +696,13 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
       strokeWidthValue.textContent = selectionStrokeWidth === null && selectedVectorItems().length > 1
         ? "Mixed"
         : `${Math.max(1, Math.round(activeWidth))}px`;
+    }
+
+    if (textFontSizeInput && textFontSizeValue) {
+      textFontSizeInput.value = String(clampTextFontSize(activeTextFontSize));
+      textFontSizeValue.textContent = selectionTextFontSize === null && selectedTextItems().length > 1
+        ? "Mixed"
+        : `${clampTextFontSize(activeTextFontSize)}px`;
     }
   }
 
@@ -660,6 +726,15 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     if (pressureSensitivityInput) {
       pressureSensitivityInput.checked = pressureSensitivityEnabled;
     }
+  }
+
+  function updateActiveTextEditorFontSize() {
+    if (!activeTextEditor) {
+      return;
+    }
+
+    activeTextEditor.fontSize = clampTextFontSize(baseTextFontSize);
+    activeTextEditor.element.style.fontSize = `${Math.max(14, Math.round(activeTextEditor.fontSize * camera.scale))}px`;
   }
 
   function readFreshNativePressure() {
@@ -774,6 +849,8 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     const pressureSensitivityInput = requireElement<HTMLInputElement>(container, "#pressure-sensitivity");
     const inputQualityInput = requireElement<HTMLInputElement>(container, "#input-quality");
     const inputQualityValue = requireElement<HTMLOutputElement>(container, "#input-quality-value");
+    const textFontSizeInput = requireElement<HTMLInputElement>(container, "#text-font-size");
+    const textFontSizeValue = requireElement<HTMLOutputElement>(container, "#text-font-size-value");
 
     for (const button of colorButtons) {
       button.addEventListener("pointerdown", (event) => {
@@ -809,6 +886,8 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
     pressureSensitivityInput.checked = pressureSensitivityEnabled;
     inputQualityInput.value = String(inputQuality);
     inputQualityValue.textContent = inputQualityLabel(inputQuality);
+    textFontSizeInput.value = String(baseTextFontSize);
+    textFontSizeValue.textContent = `${baseTextFontSize}px`;
     setActiveToolButton(toolButtons, selectedTool);
     syncStyleControls();
     syncInputQualityControl();
@@ -845,6 +924,23 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
         pressureSensitivityEnabled,
       });
       syncPressureSensitivityControl();
+    });
+
+    textFontSizeInput.addEventListener("input", () => {
+      const beforeSnapshot = selectedTextItems().length > 0 ? cloneSnapshot(buildCanvasSnapshot()) : null;
+      baseTextFontSize = clampTextFontSize(Number(textFontSizeInput.value));
+      writePreferences({
+        defaultTextFontSize: baseTextFontSize,
+      });
+
+      if (selectedTextItems().length > 0) {
+        applySelectionTextFontSize(baseTextFontSize);
+        commitHistoryAction("set-selection-text-font-size", beforeSnapshot);
+        redraw();
+      }
+
+      updateActiveTextEditorFontSize();
+      syncStyleControls();
     });
 
   }
@@ -3179,12 +3275,12 @@ ${items}
     return shape;
   }
 
-  function createTextItem(point: Point, text: string) {
+  function createTextItem(point: Point, text: string, fontSize = baseTextFontSize) {
     const textItem: CanvasText = {
       id: crypto.randomUUID(),
       text,
       color: strokeColor,
-      fontSize: Math.max(14, Math.round(baseStrokeWidth * 6)),
+      fontSize: clampTextFontSize(fontSize),
       order: nextVectorOrder,
       x: point.x,
       y: point.y,
@@ -3250,6 +3346,7 @@ ${items}
         }
 
         texts[textIndex].text = value;
+        texts[textIndex].fontSize = activeTextEditor.fontSize;
       }
     }
 
@@ -3259,7 +3356,7 @@ ${items}
         return false;
       }
 
-      const textItem = createTextItem(point, value);
+      const textItem = createTextItem(point, value, activeTextEditor.fontSize);
       textIndex = texts.findIndex((entry) => entry.id === textItem.id);
     }
 
@@ -3295,10 +3392,10 @@ ${items}
     const editor = document.createElement("textarea");
     const editorPoint = existingText ? { x: existingText.x, y: existingText.y } : point;
     const screenPoint = worldToScreen(editorPoint);
-    const baseFontSize = existingText
-      ? existingText.fontSize
-      : Math.max(14, Math.round(baseStrokeWidth * 6));
-    const editorFontSize = Math.max(14, Math.round(baseFontSize * camera.scale));
+    baseTextFontSize = existingText
+      ? clampTextFontSize(existingText.fontSize)
+      : clampTextFontSize(baseTextFontSize);
+    const editorFontSize = Math.max(14, Math.round(baseTextFontSize * camera.scale));
 
     editor.className = "canvas-text-editor";
     editor.rows = 3;
@@ -3346,7 +3443,9 @@ ${items}
       point: editorPoint,
       completionIntent: null,
       existingTextId: existingText?.id ?? null,
+      fontSize: baseTextFontSize,
     };
+    syncStyleControls();
     editor.focus();
     editor.setSelectionRange(editor.value.length, editor.value.length);
     redraw();
@@ -3899,6 +3998,7 @@ ${items}
     defaultStrokeWidth?: number;
     defaultInputQuality?: number;
     pressureSensitivityEnabled?: boolean;
+    defaultTextFontSize?: number;
     defaultShapeKind?: ShapeKind;
     defaultCanvasColor?: string;
   }>) {
@@ -3912,6 +4012,11 @@ ${items}
 
     if (typeof event.detail.pressureSensitivityEnabled === "boolean") {
       pressureSensitivityEnabled = event.detail.pressureSensitivityEnabled;
+    }
+
+    if (typeof event.detail.defaultTextFontSize === "number") {
+      baseTextFontSize = clampTextFontSize(event.detail.defaultTextFontSize);
+      updateActiveTextEditorFontSize();
     }
 
     if (event.detail.defaultShapeKind === "rectangle" || event.detail.defaultShapeKind === "ellipse" || event.detail.defaultShapeKind === "line" || event.detail.defaultShapeKind === "arrow") {
