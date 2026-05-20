@@ -180,6 +180,11 @@ type PenZoomSession = {
   lastClientY: number;
 };
 
+type PanSession = {
+  pointerId: number;
+  anchorWorldPoint: Point;
+};
+
 type NativePressureSample = {
   pressure: number;
   source: string;
@@ -318,7 +323,7 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   let activeTextEditor: TextEditorSession | null = null;
   let pendingTextPlacement: PendingTextPlacement | null = null;
   let penZoomSession: PenZoomSession | null = null;
-  let isPanning = false;
+  let panSession: PanSession | null = null;
   let isSpaceDown = false;
   let devicePixelRatioValue = window.devicePixelRatio || 1;
   let baseStrokeWidth = preferences.defaultStrokeWidth;
@@ -499,6 +504,11 @@ export function mountCanvasWorkspace(container: HTMLElement): WorkspaceControlle
   }
 
   function updateCursor() {
+    if (panSession) {
+      canvas.style.cursor = "grabbing";
+      return;
+    }
+
     if (isSpaceDown) {
       canvas.style.cursor = "grab";
       return;
@@ -3525,9 +3535,12 @@ ${items}
     }
 
     if (selectedTool === "pan" || isSpaceDown || event.button === 1 || event.button === 2) {
-      isPanning = true;
+      panSession = {
+        pointerId: event.pointerId,
+        anchorWorldPoint: point,
+      };
       canvas.setPointerCapture(event.pointerId);
-      canvas.style.cursor = "grabbing";
+      updateCursor();
       return;
     }
 
@@ -3647,9 +3660,13 @@ ${items}
       return;
     }
 
-    if (isPanning) {
-      camera.x += event.movementX;
-      camera.y += event.movementY;
+    if (panSession && panSession.pointerId === event.pointerId) {
+      const rect = canvas.getBoundingClientRect();
+      const pointerScreenX = event.clientX - rect.left;
+      const pointerScreenY = event.clientY - rect.top;
+
+      camera.x = pointerScreenX - panSession.anchorWorldPoint.x * camera.scale;
+      camera.y = pointerScreenY - panSession.anchorWorldPoint.y * camera.scale;
       redraw();
       return;
     }
@@ -3786,7 +3803,7 @@ ${items}
     marqueeSession = null;
     pendingTextPlacement = null;
     penZoomSession = null;
-    isPanning = false;
+    panSession = null;
     activeResizeHandle = null;
     redraw();
     updateCursor();
@@ -3808,7 +3825,7 @@ ${items}
     marqueeSession = null;
     pendingTextPlacement = null;
     penZoomSession = null;
-    isPanning = false;
+    panSession = null;
     activeResizeHandle = null;
     redraw();
     updateCursor();
@@ -4135,7 +4152,7 @@ ${items}
     currentStroke = null;
     currentShape = null;
     activeResizeHandle = null;
-    isPanning = false;
+    panSession = null;
     strokes.length = 0;
     shapes.length = 0;
     texts.length = 0;

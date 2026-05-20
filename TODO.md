@@ -4,6 +4,7 @@
 
 # Done TODOs
 
+- [x] 2 Canvas fix-hand-tool-drag-pan-scaling
 - [x] 2 Canvas add-text-tool-shortcut-t
 - [x] 0 Architecture architecture-foundation-and-pdfium-gate
 - [x] 0 Storage versioned-project-and-session-model
